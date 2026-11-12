@@ -18,7 +18,8 @@ const mlcss = R('node_modules/maplibre-gl/dist/maplibre-gl.css').replace(/\/\*#\
 const css = R('src/styles.css');
 const body = R('src/body.html').trim();
 const parts = ['geo', 'icons', 'demo', 'live', 'app'].map(n => R('src/' + n + '.js'));
-const js = parts.join('\n').replace(/__VERSION__/g, VERSION).replace(/__HOME__/g, HOME);
+const STAMP = Date.now().toString(36);
+const js = parts.join('\n').replace(/__BUILD__/g, VERSION + '-' + STAMP).replace(/__VERSION__/g, VERSION).replace(/__HOME__/g, HOME);
 if (/<\/script/i.test(js)) throw new Error('le script contient une balise fermante');
 if (/<\/style/i.test(css + mlcss)) throw new Error('la feuille de style contient une balise fermante');
 
@@ -76,7 +77,6 @@ const swBoot = [
 ].join('\n');
 const site = head + '\n' + body + '\n<script src="vendor/maplibre-gl.js?v=' + ML + '"></script>\n<script>\n' + js + '</script>\n' + swBoot + '\n</body>\n</html>\n';
 W(SITE + '/index.html', site);
-const STAMP = Date.now().toString(36);
 fs.mkdirSync(path.join(ROOT, SITE, 'vendor'), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'node_modules/maplibre-gl/dist/maplibre-gl.js'), path.join(ROOT, SITE, 'vendor/maplibre-gl.js'));
 for (const f of fs.existsSync(path.join(ROOT, 'site')) ? fs.readdirSync(path.join(ROOT, 'site'), { recursive: true }) : []) {

@@ -92,6 +92,7 @@
   function fail(msg, demo) {
     mapEl.innerHTML = '<div class="fail"><div>' + J.logo + '<p>' + esc(msg) + '</p><div class="actions"><button type="button" class="btn primary" data-act="reload">Réessayer</button>' + (demo ? '<button type="button" class="btn" data-act="force-demo">Voir la démo</button>' : '') + '</div></div></div>';
     sheet.hidden = true; $('#ui').hidden = true;
+    hideSplash();
   }
   const center = () => { const c = map.getCenter(); return [c.lng, c.lat]; };
   function syncInsets() {
@@ -1008,6 +1009,7 @@
     try { if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); } } catch (e) { /* pas de voix */ }
   }
   function ready() {
+    (S.upd || Promise.resolve()).then(hideSplash);
     attrib(); zoomClasses(); northUI();
     if (S.mode === 'demo') {
       D.labels.forEach(l => mk(esc(l.text), 'lbl ' + l.cls, l.rot != null ? { rotation: l.rot, rotationAlignment: 'map', pitchAlignment: 'map' } : {}).setLngLat(l.ll).addTo(map));
@@ -1037,7 +1039,39 @@
   // l'aperçu dans Claude interdit tout accès au réseau : ce blocage se reconnaît à son signalement, ou à un refus immédiat
   let cspSeen = false;
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
+  /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
+     Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
+  const BUILD = '__BUILD__';
+  async function checkUpdate() {
+    const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
+    $('#sp-logo').innerHTML = J.logo;
+    if (hosted && navigator.onLine !== false) {
+      msg.textContent = 'Recherche d’une mise à jour…';
+      try {
+        const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 4000);
+        const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store', signal: ctl.signal });
+        clearTimeout(tm);
+        const j = r.ok ? await r.json() : null;
+        if (j && j.build && j.build !== BUILD) {
+          let tried = null, canMark = true;
+          try { tried = sessionStorage.getItem('jalon.maj'); sessionStorage.setItem('jalon.maj', j.build); } catch (e) { canMark = false; }
+          if (canMark && tried !== j.build) { // une seule tentative par version, pour ne jamais tourner en boucle
+            msg.textContent = 'Mise à jour en cours…';
+            try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* pas d'aide-mémoire */ }
+            try { await fetch(location.pathname, { cache: 'reload' }); } catch (e) { /* le rechargement s'en chargera */ }
+            location.reload();
+            await new Promise(() => {});
+          }
+        } else if (j && j.build) msg.textContent = 'Lunavia est à jour';
+      } catch (e) { msg.textContent = 'Démarrage…'; }
+    } else if (hosted) msg.textContent = 'Pas de réseau : démarrage sans vérification';
+    const left = 900 - (Date.now() - t0);
+    if (left > 0) await new Promise(r => setTimeout(r, left));
+  }
+  function hideSplash() { const sp = $('#splash'); if (!sp || sp.hidden) return; sp.classList.add('out'); setTimeout(() => { sp.hidden = true; }, 320); }
   async function boot() {
+    const upd = checkUpdate().catch(() => {});
+    S.upd = upd;
     document.querySelectorAll('[data-ic]').forEach(el => { el.innerHTML = ic(el.dataset.ic); });
     $('#sb-lead').innerHTML = J.logo;
     $('#reportbtn').innerHTML = J.signs.danger;

@@ -1,6 +1,6 @@
 /* Jalon : garde l'appli et les morceaux de carte déjà vus, pour qu'elle s'ouvre même sans réseau.
-   Version 1.1.2-mwd68a8r */
-const SHELL = 'jalon-appli-1.1.2-mwd68a8r', TILES = 'jalon-tuiles-v1', MISC = 'jalon-fond-v1';
+   Version 1.2.0-mwd6c9q7 */
+const SHELL = 'jalon-appli-1.2.0-mwd6c9q7', TILES = 'jalon-tuiles-v1', MISC = 'jalon-fond-v1';
 const CORE = ['./', 'vendor/maplibre-gl.js?v=4.7.1', 'manifest.webmanifest', 'icons/icon-192.png'];
 const MAX_TILES = 600;
 const HERE = self.registration.scope; // le dossier de Jalon, par exemple https://exemple.fr/jeu/jalon/
@@ -76,7 +76,7 @@ self.addEventListener('fetch', e => {
   try { u = new URL(req.url); } catch (x) { return; }
   if (u.origin === self.location.origin) {
     if (u.href.indexOf(HERE) !== 0) return; // les autres dossiers du site ne nous regardent pas
-    if (u.pathname.endsWith('/sw.js')) return;
+    if (u.pathname.endsWith('/sw.js') || u.pathname.endsWith('/version.json')) return; // toujours demandés au réseau
     if (req.mode === 'navigate' || u.pathname.endsWith('/') || u.pathname.endsWith('/index.html')) { e.respondWith(netFirst(req, SHELL)); return; }
     e.respondWith(cacheFirst(req, SHELL));
     return;

@@ -56,6 +56,17 @@ h2,h3,p{margin:0}
 #map .fail p{font-size:16px;line-height:1.45;margin:0}
 #map .fail .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 
+/* ---------- écran d'ouverture : chargement et recherche de mise à jour ---------- */
+#splash{position:fixed;inset:0;z-index:60;background:var(--blue);color:var(--on-blue);display:grid;place-items:center;transition:opacity .3s}
+#splash.out{opacity:0;pointer-events:none}
+.sp-in{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px}
+#sp-logo svg{width:72px;height:72px;background:#fff;border-radius:20px;padding:10px;box-sizing:border-box}
+.sp-in b{font:700 34px/1 var(--cond);letter-spacing:.06em;text-transform:uppercase}
+#sp-msg{font-size:15px;opacity:.9;min-height:1.4em}
+.sp-bar{display:block;width:140px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);overflow:hidden;position:relative}
+.sp-bar::after{content:"";position:absolute;inset:0;width:40%;background:#fff;border-radius:2px;animation:sp 1.1s ease-in-out infinite alternate}
+@keyframes sp{from{transform:translateX(-20%)}to{transform:translateX(170%)}}
+
 /* ---------- couche d'interface ---------- */
 #ui{position:fixed;inset:0;z-index:5;pointer-events:none;display:flex;flex-direction:column;align-items:flex-start;gap:8px;
   padding-top:calc(env(safe-area-inset-top, 0px) + 10px);
@@ -377,6 +388,7 @@ a.btn{text-decoration:none}
   </div>
 
   <div id="results" hidden><div id="results-in"></div></div>
+  <div id="splash" role="status" aria-live="polite"><div class="sp-in"><div id="sp-logo"></div><b>Lunavia</b><span id="sp-msg">Chargement…</span><i class="sp-bar"></i></div></div>
   <section id="sheet" aria-label="Panneau d’action"><div id="sheet-in"></div></section>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -1634,6 +1646,7 @@ J.live = (function () {
   function fail(msg, demo) {
     mapEl.innerHTML = '<div class="fail"><div>' + J.logo + '<p>' + esc(msg) + '</p><div class="actions"><button type="button" class="btn primary" data-act="reload">Réessayer</button>' + (demo ? '<button type="button" class="btn" data-act="force-demo">Voir la démo</button>' : '') + '</div></div></div>';
     sheet.hidden = true; $('#ui').hidden = true;
+    hideSplash();
   }
   const center = () => { const c = map.getCenter(); return [c.lng, c.lat]; };
   function syncInsets() {
@@ -2354,7 +2367,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.1.2.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.2.0.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -2550,6 +2563,7 @@ J.live = (function () {
     try { if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); } } catch (e) { /* pas de voix */ }
   }
   function ready() {
+    (S.upd || Promise.resolve()).then(hideSplash);
     attrib(); zoomClasses(); northUI();
     if (S.mode === 'demo') {
       D.labels.forEach(l => mk(esc(l.text), 'lbl ' + l.cls, l.rot != null ? { rotation: l.rot, rotationAlignment: 'map', pitchAlignment: 'map' } : {}).setLngLat(l.ll).addTo(map));
@@ -2579,7 +2593,39 @@ J.live = (function () {
   // l'aperçu dans Claude interdit tout accès au réseau : ce blocage se reconnaît à son signalement, ou à un refus immédiat
   let cspSeen = false;
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
+  /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
+     Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
+  const BUILD = '1.2.0-mwd6c9q7';
+  async function checkUpdate() {
+    const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
+    $('#sp-logo').innerHTML = J.logo;
+    if (hosted && navigator.onLine !== false) {
+      msg.textContent = 'Recherche d’une mise à jour…';
+      try {
+        const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 4000);
+        const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store', signal: ctl.signal });
+        clearTimeout(tm);
+        const j = r.ok ? await r.json() : null;
+        if (j && j.build && j.build !== BUILD) {
+          let tried = null, canMark = true;
+          try { tried = sessionStorage.getItem('jalon.maj'); sessionStorage.setItem('jalon.maj', j.build); } catch (e) { canMark = false; }
+          if (canMark && tried !== j.build) { // une seule tentative par version, pour ne jamais tourner en boucle
+            msg.textContent = 'Mise à jour en cours…';
+            try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* pas d'aide-mémoire */ }
+            try { await fetch(location.pathname, { cache: 'reload' }); } catch (e) { /* le rechargement s'en chargera */ }
+            location.reload();
+            await new Promise(() => {});
+          }
+        } else if (j && j.build) msg.textContent = 'Lunavia est à jour';
+      } catch (e) { msg.textContent = 'Démarrage…'; }
+    } else if (hosted) msg.textContent = 'Pas de réseau : démarrage sans vérification';
+    const left = 900 - (Date.now() - t0);
+    if (left > 0) await new Promise(r => setTimeout(r, left));
+  }
+  function hideSplash() { const sp = $('#splash'); if (!sp || sp.hidden) return; sp.classList.add('out'); setTimeout(() => { sp.hidden = true; }, 320); }
   async function boot() {
+    const upd = checkUpdate().catch(() => {});
+    S.upd = upd;
     document.querySelectorAll('[data-ic]').forEach(el => { el.innerHTML = ic(el.dataset.ic); });
     $('#sb-lead').innerHTML = J.logo;
     $('#reportbtn').innerHTML = J.signs.danger;

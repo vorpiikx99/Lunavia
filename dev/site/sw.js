@@ -76,7 +76,7 @@ self.addEventListener('fetch', e => {
   try { u = new URL(req.url); } catch (x) { return; }
   if (u.origin === self.location.origin) {
     if (u.href.indexOf(HERE) !== 0) return; // les autres dossiers du site ne nous regardent pas
-    if (u.pathname.endsWith('/sw.js')) return;
+    if (u.pathname.endsWith('/sw.js') || u.pathname.endsWith('/version.json')) return; // toujours demandés au réseau
     if (req.mode === 'navigate' || u.pathname.endsWith('/') || u.pathname.endsWith('/index.html')) { e.respondWith(netFirst(req, SHELL)); return; }
     e.respondWith(cacheFirst(req, SHELL));
     return;
