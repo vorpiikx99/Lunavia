@@ -364,3 +364,7 @@ a.btn{text-decoration:none}
 [data-act="mic"].on{color:var(--red)}
 .keyf{display:grid;gap:5px;font-size:13.5px;font-weight:600;color:var(--muted);margin:6px 0}
 .keyf input{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);font:500 16px ui-monospace,Menlo,monospace;padding:0 12px;box-sizing:border-box;width:100%}
+
+/* trafic sur un trajet proposé */
+.tag.jam{background:var(--red);color:#fff;border-color:transparent}
+.tag.flow{background:var(--green);color:#fff;border-color:transparent}

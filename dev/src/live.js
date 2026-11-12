@@ -337,6 +337,21 @@ J.live = (function () {
     }
     throw err;
   }
+  /* Temps de parcours avec le trafic (TomTom). On lui donne le tracé de NOTRE itinéraire : il le reconstitue et renvoie la
+     durée réelle du moment, bouchons compris. Si son tracé s'écarte trop du nôtre, on n'en tient pas compte. */
+  async function trafficTime(geom, key, signal) {
+    if (!geom || geom.length < 2 || !key) return null;
+    const step = Math.max(1, Math.ceil(geom.length / 350)), pts = [];
+    for (let i = 0; i < geom.length; i += step) pts.push(geom[i]);
+    if (pts[pts.length - 1] !== geom[geom.length - 1]) pts.push(geom[geom.length - 1]);
+    const a = geom[0], b = geom[geom.length - 1], len = G.cum(geom)[geom.length - 1];
+    const url = 'https://api.tomtom.com/routing/1/calculateRoute/' + a[1].toFixed(6) + ',' + a[0].toFixed(6) + ':' + b[1].toFixed(6) + ',' + b[0].toFixed(6) + '/json?key=' + encodeURIComponent(key) + '&traffic=true&travelMode=car&routeType=fastest&computeTravelTimeFor=all&maxAlternatives=0';
+    const j = await getJSON(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ supportingPoints: pts.map(p => ({ latitude: +p[1].toFixed(6), longitude: +p[0].toFixed(6) })) }), signal }, 9000);
+    const sm = j && j.routes && j.routes[0] && j.routes[0].summary;
+    if (!sm || !(sm.travelTimeInSeconds > 0)) return null;
+    if (sm.lengthInMeters && Math.abs(sm.lengthInMeters - len) > Math.max(400, len * 0.12)) return null;
+    return { time: sm.travelTimeInSeconds, delay: Math.max(0, sm.trafficDelayInSeconds || 0), free: sm.noTrafficTravelTimeInSeconds || null };
+  }
   /* Signalements partagés entre tous les utilisateurs (base Supabase). La clé ci-dessous est la clé publique du projet,
      faite pour être dans une appli : la base n'autorise qu'à lire les signalements récents, en ajouter et voter. */
   const SB = 'https://ygofvzisazupdbstksqp.supabase.co/rest/v1/', SBK = 'sb_publishable_O9oJnwfQdNzZ624KKbvLVw_FXG3s98_';
@@ -492,5 +507,5 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, shared, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();

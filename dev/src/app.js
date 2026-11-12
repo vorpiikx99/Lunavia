@@ -706,6 +706,43 @@
   }
 
   /* ---------- itinéraires ---------- */
+  // Durées avec le trafic du moment : chaque trajet proposé est rechronométré, et le plus rapide passe devant.
+  function setTraffic(r, t) {
+    const k = t.time / Math.max(1, r.time);
+    if (!(k > 0.4 && k < 6)) return;
+    r.time *= k; r.steps.forEach(st => { st.time *= k; st.tAfter *= k; });
+    r.delay = t.delay; r.traf = true;
+  }
+  async function trafficRoutes(seq) {
+    if (S.mode !== 'live' || S.travel !== 'car' || !trafficOn() || !P.trafficTime) return;
+    const todo = S.routes.filter(r => !r.traf && !r.trafTried);
+    if (!todo.length) return;
+    todo.forEach(r => { r.trafTried = true; });
+    const res = await Promise.allSettled(todo.map(r => P.trafficTime(r.geom, tkey())));
+    if (seq !== S.routeSeq || S.nav) return;
+    let any = false;
+    res.forEach((x, i) => { if (x.status === 'fulfilled' && x.value) { setTraffic(todo[i], x.value); any = true; } });
+    if (!any) return;
+    labelRoutes();
+    if (!S.altPicked) { let best = 0; S.routes.forEach((r, i) => { if (r.time < S.routes[best].time - 30) best = i; }); S.sel = best; }
+    if (S.view === 'route') { render(); wxUI(); drawRoutes(false); }
+  }
+  // pendant le guidage : l'heure d'arrivée est recalée sur le trafic toutes les quatre minutes
+  async function trafficNav(n) {
+    if (!n || n.travel !== 'car' || n.simulated || S.mode !== 'live' || !trafficOn() || !P.trafficTime) return;
+    const now = Date.now();
+    if (n.trafT && now - n.trafT < 240000) return;
+    n.trafT = now;
+    try {
+      const r = n.route, rest = [G.at(r.geom, r.cum, n.s).pt].concat(r.geom.slice(n.seg + 1));
+      if (rest.length < 2 || r.dist - n.s < 1500) return;
+      const cur = r.steps[n.k], base = cur.tAfter + cur.time * (cur.len > 0 ? Math.max(0, 1 - (n.s - cur.s0) / cur.len) : 0);
+      const t = await P.trafficTime(rest, tkey());
+      if (S.nav !== n || !t || base < 60) return;
+      const k = t.time / base;
+      if (k > 0.4 && k < 6) { n.tk = k; n.delay = t.delay; }
+    } catch (e) { /* pas de trafic cette fois : on garde la dernière estimation */ }
+  }
   function labelRoutes() {
     const R = S.routes;
     if (!R.length) return;
@@ -751,12 +788,14 @@
       if (seq !== S.routeSeq) return;
       S.routes = rs.slice(0, 3); S.loading = false;
       labelRoutes(); render(); drawRoutes(true);
+      S.altPicked = false; trafficRoutes(seq);
       if (P.weather) P.weather(dest.ll, Date.now() + rs[0].time * 1000).then(w => { if (seq === S.routeSeq) { S.wx = w; wxUI(); } }).catch(() => { /* pas de météo : rien d'affiché */ });
       if (S.mode === 'live' && mode === 'car' && !opts.avoidTolls && rs[0].toll && !S.routes.some(r => !r.toll)) {
         P.route(from, dest.ll, 'car', Object.assign({}, opts, { avoidTolls: true })).then(r2 => {
           if (seq !== S.routeSeq || S.view !== 'route' || !r2[0] || r2[0].toll) return;
           S.routes = S.routes.slice(0, 2).concat([r2[0]]);
           labelRoutes(); render(); wxUI(); drawRoutes(false);
+          trafficRoutes(seq);
         }).catch(() => { /* pas de variante sans péage */ });
       }
     } catch (e) {
@@ -782,6 +821,7 @@
     if (r.toll) tags.push('<span class="tag toll">Péage</span>');
     if (r.highway && S.travel === 'car') tags.push('<span class="tag">Autoroute</span>');
     if (r.ferry) tags.push('<span class="tag">Ferry</span>');
+    if (r.traf) tags.push(r.delay >= 120 ? '<span class="tag jam">+ ' + F.dur(r.delay) + ' de bouchons</span>' : '<span class="tag flow">Trafic fluide</span>');
     const eta = new Date(Date.now() + r.time * 1000);
     const extra = S.travel === 'car' ? '≈ ' + F.euro(r.dist / 1000 * db.set.conso / 100 * db.set.prix) + ' de carburant' + (r.toll ? ', péage en plus' : '') : '≈ ' + Math.max(5, Math.round(r.dist / 1000 * (S.travel === 'bike' ? 26 : 62) / 5) * 5) + ' kcal';
     return '<button type="button" class="alt" role="radio" aria-checked="' + (i === S.sel) + '" data-act="alt" data-i="' + i + '"><b>' + F.dur(r.time) + '</b><span class="am">' + F.dist(r.dist) + ' · arrivée ' + F.clock(eta) + '</span><span class="tags">' + tags.join('') + '</span><span class="ax">' + extra + '</span></button>';
@@ -847,6 +887,7 @@
       n.route = rs[0]; n.s = 0; n.seg = 0; n.k = 0; n.said = {}; n.ui = -2;
       n.lim = null; n.limTo = null; n.li = 0; n.limFail = 0;
       S.routes = [rs[0]]; S.sel = 0;
+      if (S.nav) { S.nav.tk = 1; S.nav.trafT = 0; }
       indexReports();
       setSrc('route', { type: 'FeatureCollection', features: [line(rs[0].geom)] });
       setGrad(0, true);
@@ -870,7 +911,8 @@
     n.k = k;
     const cur = r.steps[k], nx = r.steps[k + 1], dn = nx ? Math.max(0, nx.s0 - n.s) : 0;
     n.rem = Math.max(0, r.dist - n.s);
-    n.tRem = cur.tAfter + cur.time * (cur.len > 0 ? Math.max(0, 1 - (n.s - cur.s0) / cur.len) : 0);
+    n.tRem = (cur.tAfter + cur.time * (cur.len > 0 ? Math.max(0, 1 - (n.s - cur.s0) / cur.len) : 0)) * (n.tk || 1);
+    trafficNav(n);
     n.next = nx; n.dn = dn;
     if (!nx || n.rem < 18 || (n.rem < 40 && !f.sim && (f.speed || 0) < 1.2)) { arrive(); return; }
     const v = f.speed || 0, far = v < 8.5 ? 150 : v < 15 ? 300 : v < 25 ? 500 : 1000, near = Math.max(30, v * 4), key = k + 1;
@@ -1118,7 +1160,7 @@
     },
     mode(el) { if (S.travel === el.dataset.k) return; S.travel = el.dataset.k; if (S.dest) plan(S.dest); },
     opt(el) { const k = el.dataset.k; db.set[k] = !db.set[k]; save(); if (S.dest) plan(S.dest); },
-    alt(el) { S.sel = +el.dataset.i; drawRoutes(false); render(); },
+    alt(el) { S.sel = +el.dataset.i; S.altPicked = true; drawRoutes(false); render(); },
     start() { startNav(false); },
     sim() { startNav(true); },
     // bouton palette : carte claire ou noir doux ; le choix est gardé pour les prochaines ouvertures

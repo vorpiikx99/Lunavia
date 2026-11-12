@@ -130,7 +130,7 @@ function png(w, h, rgb) {
 const ORTHO = png(256, 256, [58, 84, 52]);
 
 /* ---------- serveur ---------- */
-const SBROWS = [];
+const SBROWS = [], TTN = [];
 const json = (res, obj, code) => { const b = Buffer.from(JSON.stringify(obj)); res.writeHead(code || 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(b); };
 const body = req => new Promise(r => { const c = []; req.on('data', d => c.push(d)); req.on('end', () => r(Buffer.concat(c).toString('utf8'))); });
 const log = [];
@@ -206,6 +206,16 @@ http.createServer(async (req, res) => {
       ];
       const d = q.get('departement');
       return json(res, { results: [{ nom_complet: 'DISTRIBUTION SANITAIRE CHAUFFAGE (D.S.C.)', matching_etablissements: d ? all.filter(e => e.code_postal.startsWith(d)) : all }], total_results: 1 });
+    }
+    if (host === 'api.tomtom.com') { // trafic : pas de tuiles ici ; durées = 50 km/h de moyenne, plus les bouchons demandés par l'essai
+      if (!p.startsWith('/routing/1/calculateRoute/')) { res.writeHead(204, { 'access-control-allow-origin': '*' }); return res.end(); }
+      if (flags.ttDown) { res.writeHead(503); return res.end('down'); }
+      const o = JSON.parse(await body(req)), pts = o.supportingPoints || [];
+      let len = 0; const R = 6371000, rad = Math.PI / 180;
+      for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], x = (b.longitude - a.longitude) * rad * Math.cos((a.latitude + b.latitude) / 2 * rad), y = (b.latitude - a.latitude) * rad; len += Math.sqrt(x * x + y * y) * R; }
+      TTN.push(Math.round(len));
+      const free = len / 13.9, n = TTN.length, delay = flags.ttDelay ? (flags.ttJamLen && Math.abs(len - flags.ttJamLen) > flags.ttJamLen * 0.02 ? 0 : flags.ttDelay) : 0;
+      return json(res, { routes: [{ summary: { lengthInMeters: Math.round(len * (flags.ttWrong ? 1.5 : 1)), travelTimeInSeconds: Math.round(free + delay), trafficDelayInSeconds: delay, noTrafficTravelTimeInSeconds: Math.round(free) } }] });
     }
     if (host === 'api.open-meteo.com') {
       const now = new Date(); const hours = []; const temps = [], codes = [], pops = [];
