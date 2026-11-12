@@ -130,6 +130,7 @@ function png(w, h, rgb) {
 const ORTHO = png(256, 256, [58, 84, 52]);
 
 /* ---------- serveur ---------- */
+const SBROWS = [];
 const json = (res, obj, code) => { const b = Buffer.from(JSON.stringify(obj)); res.writeHead(code || 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(b); };
 const body = req => new Promise(r => { const c = []; req.on('data', d => c.push(d)); req.on('end', () => r(Buffer.concat(c).toString('utf8'))); });
 const log = [];
@@ -175,6 +176,25 @@ http.createServer(async (req, res) => {
       const r = await fetch('http://127.0.0.1:' + port + '/' + seg.slice(1).join('/') + u.search);
       const t = Buffer.from(await r.arrayBuffer());
       res.writeHead(r.status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); return res.end(t);
+    }
+    if (host === 'ygofvzisazupdbstksqp.supabase.co') { // base partagée des signalements, rejouée en mémoire
+      if (flags.sbDown) { res.writeHead(503); return res.end('down'); }
+      const key = req.headers['apikey'] || '';
+      if (!/^sb_publishable_/.test(key) || req.headers['authorization']) return json(res, { message: 'cle refusee' }, 401);
+      if (p === '/rest/v1/reports' && req.method === 'GET') {
+        const num = (k, op) => { const v = q.getAll(k).find(x => x.startsWith(op + '.')); return v ? +v.slice(op.length + 1) : null; };
+        const a = num('lon', 'gte'), b2 = num('lon', 'lte'), c = num('lat', 'gte'), d = num('lat', 'lte');
+        return json(res, SBROWS.filter(r => r.no < 3 && Date.now() - Date.parse(r.created_at) < 864e5 && r.lon >= a && r.lon <= b2 && r.lat >= c && r.lat <= d));
+      }
+      if (p === '/rest/v1/reports' && req.method === 'POST') {
+        const o = JSON.parse(await body(req));
+        if (!['jam', 'crash', 'danger', 'works', 'control', 'closed'].includes(o.type) || (o.note && o.note.length > 80)) return json(res, { message: 'check' }, 400);
+        const row = { id: 'srv-' + (SBROWS.length + 1), type: o.type, lon: o.lon, lat: o.lat, note: o.note, created_at: new Date().toISOString(), yes: 0, no: 0 };
+        SBROWS.push(row); return json(res, [row], 201);
+      }
+      if (p === '/rest/v1/rpc/vote' && req.method === 'POST') { const o = JSON.parse(await body(req)), r = SBROWS.find(x => x.id === o.rid); if (r) { if (o.still) r.yes++; else r.no++; } res.writeHead(204, { 'access-control-allow-origin': '*' }); return res.end(); }
+      if (p === '/_rows') { if (req.method === 'POST') { const o = JSON.parse(await body(req)); if (o.reset) SBROWS.length = 0; if (o.add) SBROWS.push(Object.assign({ id: 'srv-' + (SBROWS.length + 1), created_at: new Date().toISOString(), yes: 0, no: 0, note: null }, o.add)); } return json(res, SBROWS); }
+      return json(res, { message: 'inconnu' }, 404);
     }
     if (host === 'api.open-meteo.com') {
       const now = new Date(); const hours = []; const temps = [], codes = [], pops = [];

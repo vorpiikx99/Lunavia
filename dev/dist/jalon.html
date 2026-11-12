@@ -1498,6 +1498,27 @@ J.live = (function () {
     }
     throw err;
   }
+  /* Signalements partagés entre tous les utilisateurs (base Supabase). La clé ci-dessous est la clé publique du projet,
+     faite pour être dans une appli : la base n'autorise qu'à lire les signalements récents, en ajouter et voter. */
+  const SB = 'https://ygofvzisazupdbstksqp.supabase.co/rest/v1/', SBK = 'sb_publishable_O9oJnwfQdNzZ624KKbvLVw_FXG3s98_';
+  const sbH = extra => Object.assign({ apikey: SBK }, extra || {});
+  const shared = {
+    // signalements autour d'un point (rayon en km)
+    async list(ll, km) {
+      const dy = km / 111, dx = km / (111 * Math.max(0.2, Math.cos(ll[1] * Math.PI / 180)));
+      const q = 'reports?select=id,type,lon,lat,note,created_at,yes,no&lon=gte.' + (ll[0] - dx).toFixed(4) + '&lon=lte.' + (ll[0] + dx).toFixed(4) + '&lat=gte.' + (ll[1] - dy).toFixed(4) + '&lat=lte.' + (ll[1] + dy).toFixed(4) + '&order=created_at.desc&limit=300';
+      const rows = await getJSON(SB + q, { headers: sbH() }, 9000);
+      return { box: [ll[0] - dx, ll[1] - dy, ll[0] + dx, ll[1] + dy], rows: (Array.isArray(rows) ? rows : []).filter(r => r && r.id && isFinite(r.lon) && isFinite(r.lat)).map(r => ({ sid: r.id, type: r.type, ll: [+r.lon, +r.lat], note: r.note ? String(r.note).slice(0, 80) : '', t: Date.parse(r.created_at) || Date.now(), yes: r.yes || 0, no: r.no || 0 })) };
+    },
+    async post(rp) {
+      const rows = await getJSON(SB + 'reports', { method: 'POST', headers: sbH({ 'content-type': 'application/json', prefer: 'return=representation' }), body: JSON.stringify({ type: rp.type, lon: rp.ll[0], lat: rp.ll[1], note: rp.note || null }) }, 9000);
+      return Array.isArray(rows) && rows[0] ? rows[0].id : null;
+    },
+    async vote(sid, still) {
+      const r = await fetch(SB + 'rpc/vote', { method: 'POST', headers: sbH({ 'content-type': 'application/json' }), body: JSON.stringify({ rid: sid, still: !!still }) });
+      return r.ok;
+    }
+  };
   // points de contrôle le long d'un trajet (OpenStreetMap), pour en déduire des zones de danger : jamais affichés tels quels
   async function cameras(geom) {
     const step = Math.max(1, Math.ceil(geom.length / 140)), pts = [];
@@ -1633,7 +1654,7 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();
 
 /* ---------- Lunavia : l'application ---------- */
@@ -1671,11 +1692,11 @@ J.live = (function () {
 
   /* ---------- mémoire de l'appareil ---------- */
   const KEY = 'jalon.v1';
-  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '' };
+  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '', share: true };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { d = {}; }
-    return { home: d.home || null, work: d.work || null, favs: Array.isArray(d.favs) ? d.favs : [], recents: Array.isArray(d.recents) ? d.recents : [], reports: Array.isArray(d.reports) ? d.reports.filter(r => r && REPORTS[r.type] && Array.isArray(r.ll)) : [], parked: d.parked || null, last: Array.isArray(d.last) ? d.last : null, set: Object.assign({}, DEFSET, d.set || {}) };
+    return { gone: Array.isArray(d.gone) ? d.gone.slice(-200) : [], home: d.home || null, work: d.work || null, favs: Array.isArray(d.favs) ? d.favs : [], recents: Array.isArray(d.recents) ? d.recents : [], reports: Array.isArray(d.reports) ? d.reports.filter(r => r && REPORTS[r.type] && Array.isArray(r.ll)) : [], parked: d.parked || null, last: Array.isArray(d.last) ? d.last : null, set: Object.assign({}, DEFSET, d.set || {}) };
   }
   let saveT = 0;
   function save() { if (S.mode !== 'live') return; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* stockage indisponible : l'appli continue sans mémoire */ } }
@@ -1963,6 +1984,7 @@ J.live = (function () {
     }
     speedo(f);
     $('#locate').classList.toggle('on', S.follow);
+    if (!f.sim) syncShared();
   }
   function startGPS(user) {
     if (S.mode !== 'live') return;
@@ -2076,7 +2098,36 @@ J.live = (function () {
       M.reps.set(rp.id, m);
     });
   }
-  function dropReport(rp) { db.reports = db.reports.filter(r => r !== rp); save(); drawReports(); if (S.nav) indexReports(); }
+  function dropReport(rp) {
+    db.reports = db.reports.filter(r => r !== rp);
+    if (rp.sid) { db.gone = (db.gone || []).concat(rp.sid).slice(-200); voteShared(rp, false); } // « plus là » : compte aussi pour les autres
+    save(); drawReports(); if (S.nav) indexReports();
+  }
+  /* Signalements partagés : ceux des autres utilisateurs arrivent dans la même liste que les miens (marqués sh),
+     les miens sont envoyés à la base commune. Sans réseau, tout continue de marcher avec ce que l'appareil connaît. */
+  const sharing = () => S.mode === 'live' && db.set.share !== false && !!(P && P.shared);
+  const SH = { t: 0, at: null, busy: false };
+  async function syncShared(force) {
+    if (!sharing() || SH.busy || !S.pos) return;
+    const ll = S.pos.ll, now = Date.now();
+    if (!force && now - SH.t < 150000 && SH.at && G.hav(SH.at, ll) < 8000) return;
+    SH.busy = true;
+    try {
+      const res = await P.shared.list(ll, 60), b = res.box, mine = new Set(db.reports.filter(r => r.sid && !r.sh).map(r => r.sid)), gone = new Set(db.gone || []), seen = new Set(res.rows.map(r => r.sid));
+      // ceux qui ont disparu de la base (retirés par les votes) quittent la carte
+      db.reports = db.reports.filter(r => !(r.sh && r.ll[0] >= b[0] && r.ll[0] <= b[2] && r.ll[1] >= b[1] && r.ll[1] <= b[3] && !seen.has(r.sid)));
+      const have = new Set(db.reports.filter(r => r.sh).map(r => r.sid));
+      res.rows.forEach(r => { if (mine.has(r.sid) || gone.has(r.sid) || have.has(r.sid) || !REPORTS[r.type]) return; const rp = { id: 's' + r.sid, sid: r.sid, sh: true, type: r.type, ll: r.ll, t: r.t }; if (r.note) rp.note = r.note; db.reports.push(rp); });
+      SH.t = now; SH.at = ll.slice();
+      save(); drawReports(); if (S.nav) indexReports();
+    } catch (e) { SH.t = now - 120000; /* nouvel essai dans une demi-minute */ }
+    SH.busy = false;
+  }
+  function postShared(rp) {
+    if (!sharing()) return;
+    P.shared.post(rp).then(sid => { if (sid) { rp.sid = sid; save(); } }).catch(() => { toast('Signalement gardé sur cet appareil : le partage n’a pas pu se faire.'); });
+  }
+  function voteShared(rp, still) { if (rp && rp.sid && sharing()) P.shared.vote(rp.sid, still).catch(() => {}); }
   function setAlert(x) {
     const el = $('#alert');
     if (!x) { if (!el.hidden) el.hidden = true; S.alertRp = null; return; }
@@ -2426,6 +2477,7 @@ J.live = (function () {
     go('nav');
     routeColors();
     loadZones(S.nav);
+    syncShared(true);
     wake(true);
     const first = r.steps[0], nx = r.steps[1];
     say('C’est parti. ' + sayText(first) + (nx && nx.s0 > 60 && nx.type !== 'arrive' ? '. Puis, dans ' + F.say(nx.s0) + ', ' + fr.lower(sayText(nx)) : ''), true);
@@ -2621,7 +2673,7 @@ J.live = (function () {
   }
   function vRep() {
     const rp = S.rep;
-    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
+    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : rp.sh ? ' · signalé par un autre utilisateur' : rp.sid ? ' · partagé' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
   }
   function vSettings() {
     const s = db.set, tog = (k, label) => '<label class="tog" for="set-' + k + '"><input type="checkbox" id="set-' + k + '" data-set="' + k + '"' + (s[k] ? ' checked' : '') + '>' + label + '</label>';
@@ -2631,7 +2683,7 @@ J.live = (function () {
     if (db.work) places += pl('Travail', db.work, 'work');
     db.favs.forEach((p, i) => { places += pl(p.name, { name: p.sub }, 'fav' + i); });
     if (db.parked) places += pl('Ma voiture', { name: 'Garée ' + F.ago(db.parked.t) }, 'parked');
-    return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') +
+    return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') + tog('share', 'Partager mes signalements et voir ceux des autres') +
       '<h3>Trafic en direct</h3>' + tog('traffic', 'Afficher le trafic sur la carte') +
       '<p class="note">' + (S.mode !== 'live' ? 'Le trafic s’affiche sur la vraie carte, pas dans la démo.' : 'Vert : fluide. Orange : ralenti. Rouge : bouchon. Données TomTom.') + '</p>' +
       '<h3>Coût du trajet</h3>' +
@@ -2639,7 +2691,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.5.1.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.6.0.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -2742,15 +2794,16 @@ J.live = (function () {
       const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
       if (note) rp.note = note;
       db.reports.push(rp); save(); drawReports();
+      postShared(rp);
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
       if (S.view === 'report') close(); // posé à la voix : on reste sur l'écran en cours
       if (type === 'closed' && S.nav && S.pos) reroute(S.pos);
-      toast(REPORTS[type].said + ' ici' + (S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
+      toast(REPORTS[type].said + ' ici' + (sharing() ? ', partagé avec les autres utilisateurs' : S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
     },
-    'rep-yes'() { if (S.rep) { S.rep.t = Date.now(); save(); toast('Merci, signalement confirmé.'); } close(); },
+    'rep-yes'() { if (S.rep) { S.rep.t = Date.now(); save(); voteShared(S.rep, true); toast('Merci, signalement confirmé.'); } close(); },
     'rep-no'() { if (S.rep) dropReport(S.rep); S.rep = null; toast('Signalement retiré.'); close(); },
-    'al-yes'() { const rp = S.alertRp; if (!rp) return; rp.t = Date.now(); save(); if (S.nav) S.nav.alerted[rp.id] = 2; S.freeAlerted[rp.id] = 2; setAlert(null); },
+    'al-yes'() { const rp = S.alertRp; if (!rp) return; rp.t = Date.now(); save(); voteShared(rp, true); if (S.nav) S.nav.alerted[rp.id] = 2; S.freeAlerted[rp.id] = 2; setAlert(null); },
     'al-no'() { const rp = S.alertRp; if (!rp) return; if (S.nav) S.nav.alerted[rp.id] = 2; S.freeAlerted[rp.id] = 2; setAlert(null); dropReport(rp); },
     layers() {
       if (S.mode !== 'live') { toast('Les photos aériennes arrivent avec la vraie carte.'); return; }
@@ -2800,6 +2853,7 @@ J.live = (function () {
       else if (t.type === 'number') { const v = parseFloat(String(t.value).replace(',', '.')); if (v >= +t.min && v <= +t.max) db.set[k] = v; else t.value = db.set[k]; }
       else db.set[k] = t.value;
       save();
+      if (k === 'share') { if (db.set.share) syncShared(true); else { db.reports = db.reports.filter(r => !r.sh); save(); drawReports(); } }
       if (k === 'traffic') { setBase(); attrib(); toast(db.set.traffic ? 'Trafic affiché' : 'Trafic masqué'); }
     });
     $('#searchbar').addEventListener('submit', e => e.preventDefault());
@@ -2878,7 +2932,7 @@ J.live = (function () {
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
   /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
      Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
-  const BUILD = '1.5.1-mwdetp5b';
+  const BUILD = '1.6.0-mwdoxex2';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
     $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;

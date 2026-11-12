@@ -3,12 +3,13 @@
 import { open, idle, sleep, state, closeAll } from './lib.mjs';
 
 const BED = 'http://127.0.0.1:8003/';
-const HOSTS = ['tiles.openfreemap.org', 'photon.komoot.io', 'overpass-api.de', 'overpass.private.coffee', 'data.economie.gouv.fr', 'data.geopf.fr', 'valhalla1.openstreetmap.de', 'routing.openstreetmap.de', 'api.open-meteo.com'];
+const HOSTS = ['tiles.openfreemap.org', 'photon.komoot.io', 'overpass-api.de', 'overpass.private.coffee', 'data.economie.gouv.fr', 'data.geopf.fr', 'valhalla1.openstreetmap.de', 'routing.openstreetmap.de', 'api.open-meteo.com', 'ygofvzisazupdbstksqp.supabase.co'];
 export const bed = async (u, route, req) => {
   const x = new URL(u);
   if (!HOSTS.includes(x.host)) return false;
+  if (req.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS' } }); return true; }
   const body = req.postData();
-  const r = await fetch(BED + x.host + x.pathname + x.search, { method: req.method(), body: body || undefined, headers: body ? { 'content-type': req.headers()['content-type'] || 'text/plain' } : {} });
+  const r = await fetch(BED + x.host + x.pathname + x.search, { method: req.method(), body: body || undefined, headers: Object.assign(body ? { 'content-type': req.headers()['content-type'] || 'text/plain' } : {}, ...['apikey', 'authorization', 'prefer'].map(h => (req.headers()[h] ? { [h]: req.headers()[h] } : {}))) });
   await route.fulfill({ status: r.status, headers: { 'content-type': r.headers.get('content-type') || 'application/octet-stream', 'access-control-allow-origin': '*' }, body: Buffer.from(await r.arrayBuffer()) });
   return true;
 };

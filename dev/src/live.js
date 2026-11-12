@@ -302,6 +302,27 @@ J.live = (function () {
     }
     throw err;
   }
+  /* Signalements partagés entre tous les utilisateurs (base Supabase). La clé ci-dessous est la clé publique du projet,
+     faite pour être dans une appli : la base n'autorise qu'à lire les signalements récents, en ajouter et voter. */
+  const SB = 'https://ygofvzisazupdbstksqp.supabase.co/rest/v1/', SBK = 'sb_publishable_O9oJnwfQdNzZ624KKbvLVw_FXG3s98_';
+  const sbH = extra => Object.assign({ apikey: SBK }, extra || {});
+  const shared = {
+    // signalements autour d'un point (rayon en km)
+    async list(ll, km) {
+      const dy = km / 111, dx = km / (111 * Math.max(0.2, Math.cos(ll[1] * Math.PI / 180)));
+      const q = 'reports?select=id,type,lon,lat,note,created_at,yes,no&lon=gte.' + (ll[0] - dx).toFixed(4) + '&lon=lte.' + (ll[0] + dx).toFixed(4) + '&lat=gte.' + (ll[1] - dy).toFixed(4) + '&lat=lte.' + (ll[1] + dy).toFixed(4) + '&order=created_at.desc&limit=300';
+      const rows = await getJSON(SB + q, { headers: sbH() }, 9000);
+      return { box: [ll[0] - dx, ll[1] - dy, ll[0] + dx, ll[1] + dy], rows: (Array.isArray(rows) ? rows : []).filter(r => r && r.id && isFinite(r.lon) && isFinite(r.lat)).map(r => ({ sid: r.id, type: r.type, ll: [+r.lon, +r.lat], note: r.note ? String(r.note).slice(0, 80) : '', t: Date.parse(r.created_at) || Date.now(), yes: r.yes || 0, no: r.no || 0 })) };
+    },
+    async post(rp) {
+      const rows = await getJSON(SB + 'reports', { method: 'POST', headers: sbH({ 'content-type': 'application/json', prefer: 'return=representation' }), body: JSON.stringify({ type: rp.type, lon: rp.ll[0], lat: rp.ll[1], note: rp.note || null }) }, 9000);
+      return Array.isArray(rows) && rows[0] ? rows[0].id : null;
+    },
+    async vote(sid, still) {
+      const r = await fetch(SB + 'rpc/vote', { method: 'POST', headers: sbH({ 'content-type': 'application/json' }), body: JSON.stringify({ rid: sid, still: !!still }) });
+      return r.ok;
+    }
+  };
   // points de contrôle le long d'un trajet (OpenStreetMap), pour en déduire des zones de danger : jamais affichés tels quels
   async function cameras(geom) {
     const step = Math.max(1, Math.ceil(geom.length / 140)), pts = [];
@@ -437,5 +458,5 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();

@@ -33,11 +33,11 @@
 
   /* ---------- mémoire de l'appareil ---------- */
   const KEY = 'jalon.v1';
-  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '' };
+  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '', share: true };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { d = {}; }
-    return { home: d.home || null, work: d.work || null, favs: Array.isArray(d.favs) ? d.favs : [], recents: Array.isArray(d.recents) ? d.recents : [], reports: Array.isArray(d.reports) ? d.reports.filter(r => r && REPORTS[r.type] && Array.isArray(r.ll)) : [], parked: d.parked || null, last: Array.isArray(d.last) ? d.last : null, set: Object.assign({}, DEFSET, d.set || {}) };
+    return { gone: Array.isArray(d.gone) ? d.gone.slice(-200) : [], home: d.home || null, work: d.work || null, favs: Array.isArray(d.favs) ? d.favs : [], recents: Array.isArray(d.recents) ? d.recents : [], reports: Array.isArray(d.reports) ? d.reports.filter(r => r && REPORTS[r.type] && Array.isArray(r.ll)) : [], parked: d.parked || null, last: Array.isArray(d.last) ? d.last : null, set: Object.assign({}, DEFSET, d.set || {}) };
   }
   let saveT = 0;
   function save() { if (S.mode !== 'live') return; try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { /* stockage indisponible : l'appli continue sans mémoire */ } }
@@ -325,6 +325,7 @@
     }
     speedo(f);
     $('#locate').classList.toggle('on', S.follow);
+    if (!f.sim) syncShared();
   }
   function startGPS(user) {
     if (S.mode !== 'live') return;
@@ -438,7 +439,36 @@
       M.reps.set(rp.id, m);
     });
   }
-  function dropReport(rp) { db.reports = db.reports.filter(r => r !== rp); save(); drawReports(); if (S.nav) indexReports(); }
+  function dropReport(rp) {
+    db.reports = db.reports.filter(r => r !== rp);
+    if (rp.sid) { db.gone = (db.gone || []).concat(rp.sid).slice(-200); voteShared(rp, false); } // « plus là » : compte aussi pour les autres
+    save(); drawReports(); if (S.nav) indexReports();
+  }
+  /* Signalements partagés : ceux des autres utilisateurs arrivent dans la même liste que les miens (marqués sh),
+     les miens sont envoyés à la base commune. Sans réseau, tout continue de marcher avec ce que l'appareil connaît. */
+  const sharing = () => S.mode === 'live' && db.set.share !== false && !!(P && P.shared);
+  const SH = { t: 0, at: null, busy: false };
+  async function syncShared(force) {
+    if (!sharing() || SH.busy || !S.pos) return;
+    const ll = S.pos.ll, now = Date.now();
+    if (!force && now - SH.t < 150000 && SH.at && G.hav(SH.at, ll) < 8000) return;
+    SH.busy = true;
+    try {
+      const res = await P.shared.list(ll, 60), b = res.box, mine = new Set(db.reports.filter(r => r.sid && !r.sh).map(r => r.sid)), gone = new Set(db.gone || []), seen = new Set(res.rows.map(r => r.sid));
+      // ceux qui ont disparu de la base (retirés par les votes) quittent la carte
+      db.reports = db.reports.filter(r => !(r.sh && r.ll[0] >= b[0] && r.ll[0] <= b[2] && r.ll[1] >= b[1] && r.ll[1] <= b[3] && !seen.has(r.sid)));
+      const have = new Set(db.reports.filter(r => r.sh).map(r => r.sid));
+      res.rows.forEach(r => { if (mine.has(r.sid) || gone.has(r.sid) || have.has(r.sid) || !REPORTS[r.type]) return; const rp = { id: 's' + r.sid, sid: r.sid, sh: true, type: r.type, ll: r.ll, t: r.t }; if (r.note) rp.note = r.note; db.reports.push(rp); });
+      SH.t = now; SH.at = ll.slice();
+      save(); drawReports(); if (S.nav) indexReports();
+    } catch (e) { SH.t = now - 120000; /* nouvel essai dans une demi-minute */ }
+    SH.busy = false;
+  }
+  function postShared(rp) {
+    if (!sharing()) return;
+    P.shared.post(rp).then(sid => { if (sid) { rp.sid = sid; save(); } }).catch(() => { toast('Signalement gardé sur cet appareil : le partage n’a pas pu se faire.'); });
+  }
+  function voteShared(rp, still) { if (rp && rp.sid && sharing()) P.shared.vote(rp.sid, still).catch(() => {}); }
   function setAlert(x) {
     const el = $('#alert');
     if (!x) { if (!el.hidden) el.hidden = true; S.alertRp = null; return; }
@@ -788,6 +818,7 @@
     go('nav');
     routeColors();
     loadZones(S.nav);
+    syncShared(true);
     wake(true);
     const first = r.steps[0], nx = r.steps[1];
     say('C’est parti. ' + sayText(first) + (nx && nx.s0 > 60 && nx.type !== 'arrive' ? '. Puis, dans ' + F.say(nx.s0) + ', ' + fr.lower(sayText(nx)) : ''), true);
@@ -983,7 +1014,7 @@
   }
   function vRep() {
     const rp = S.rep;
-    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
+    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : rp.sh ? ' · signalé par un autre utilisateur' : rp.sid ? ' · partagé' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
   }
   function vSettings() {
     const s = db.set, tog = (k, label) => '<label class="tog" for="set-' + k + '"><input type="checkbox" id="set-' + k + '" data-set="' + k + '"' + (s[k] ? ' checked' : '') + '>' + label + '</label>';
@@ -993,7 +1024,7 @@
     if (db.work) places += pl('Travail', db.work, 'work');
     db.favs.forEach((p, i) => { places += pl(p.name, { name: p.sub }, 'fav' + i); });
     if (db.parked) places += pl('Ma voiture', { name: 'Garée ' + F.ago(db.parked.t) }, 'parked');
-    return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') +
+    return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') + tog('share', 'Partager mes signalements et voir ceux des autres') +
       '<h3>Trafic en direct</h3>' + tog('traffic', 'Afficher le trafic sur la carte') +
       '<p class="note">' + (S.mode !== 'live' ? 'Le trafic s’affiche sur la vraie carte, pas dans la démo.' : 'Vert : fluide. Orange : ralenti. Rouge : bouchon. Données TomTom.') + '</p>' +
       '<h3>Coût du trajet</h3>' +
@@ -1104,15 +1135,16 @@
       const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
       if (note) rp.note = note;
       db.reports.push(rp); save(); drawReports();
+      postShared(rp);
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
       if (S.view === 'report') close(); // posé à la voix : on reste sur l'écran en cours
       if (type === 'closed' && S.nav && S.pos) reroute(S.pos);
-      toast(REPORTS[type].said + ' ici' + (S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
+      toast(REPORTS[type].said + ' ici' + (sharing() ? ', partagé avec les autres utilisateurs' : S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
     },
-    'rep-yes'() { if (S.rep) { S.rep.t = Date.now(); save(); toast('Merci, signalement confirmé.'); } close(); },
+    'rep-yes'() { if (S.rep) { S.rep.t = Date.now(); save(); voteShared(S.rep, true); toast('Merci, signalement confirmé.'); } close(); },
     'rep-no'() { if (S.rep) dropReport(S.rep); S.rep = null; toast('Signalement retiré.'); close(); },
-    'al-yes'() { const rp = S.alertRp; if (!rp) return; rp.t = Date.now(); save(); if (S.nav) S.nav.alerted[rp.id] = 2; S.freeAlerted[rp.id] = 2; setAlert(null); },
+    'al-yes'() { const rp = S.alertRp; if (!rp) return; rp.t = Date.now(); save(); voteShared(rp, true); if (S.nav) S.nav.alerted[rp.id] = 2; S.freeAlerted[rp.id] = 2; setAlert(null); },
     'al-no'() { const rp = S.alertRp; if (!rp) return; if (S.nav) S.nav.alerted[rp.id] = 2; S.freeAlerted[rp.id] = 2; setAlert(null); dropReport(rp); },
     layers() {
       if (S.mode !== 'live') { toast('Les photos aériennes arrivent avec la vraie carte.'); return; }
@@ -1162,6 +1194,7 @@
       else if (t.type === 'number') { const v = parseFloat(String(t.value).replace(',', '.')); if (v >= +t.min && v <= +t.max) db.set[k] = v; else t.value = db.set[k]; }
       else db.set[k] = t.value;
       save();
+      if (k === 'share') { if (db.set.share) syncShared(true); else { db.reports = db.reports.filter(r => !r.sh); save(); drawReports(); } }
       if (k === 'traffic') { setBase(); attrib(); toast(db.set.traffic ? 'Trafic affiché' : 'Trafic masqué'); }
     });
     $('#searchbar').addEventListener('submit', e => e.preventDefault());
