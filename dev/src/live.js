@@ -27,11 +27,34 @@ J.live = (function () {
     };
     st.layers.forEach(l => { if (l.layout && l.layout['text-field']) l.layout['text-field'] = sub(l.layout['text-field']); });
   }
+  /* Le thème « noir doux » : le fond clair recoloré (anthracite, rues grises, grands axes clairs, autoroutes jaunes). */
+  const NOIR = { bg: '#1B1D22', land: '#202329', green: '#22362B', water: '#1E3A57', build: '#2B2F37', ext: '#383C45', road: '#8E94A0', minor: '#6C727E', major: '#B5BAC4', motor: '#E9BE63', casing: '#15171B', rail: '#3A3E47', text: '#E6E8EC', text2: '#B9BEC8', wtext: '#7FB2E8', halo: '#17191D' };
+  function noir(st) {
+    const c = NOIR;
+    st.layers.forEach(l => {
+      const id = String(l.id).toLowerCase(), sl = l['source-layer'] || '', p = l.paint = l.paint || {};
+      if (l.type === 'background') p['background-color'] = c.bg;
+      else if (l.type === 'fill') {
+        delete p['fill-pattern'];
+        p['fill-color'] = sl === 'water' || /water/.test(id) ? c.water : sl === 'park' || sl === 'landcover' || /park|wood|grass|forest|green|cemetery|pitch|garden/.test(id) ? c.green : sl === 'building' ? c.build : sl === 'transportation' || sl === 'aeroway' ? c.minor : c.land;
+        p['fill-outline-color'] = 'rgba(0,0,0,0)';
+      } else if (l.type === 'fill-extrusion') { p['fill-extrusion-color'] = c.ext; p['fill-extrusion-opacity'] = 0.85; }
+      else if (l.type === 'line') {
+        p['line-color'] = sl === 'waterway' || sl === 'water' ? c.water : sl === 'boundary' ? c.major : /rail|transit/.test(id) ? c.rail : /casing|outline/.test(id) ? c.casing
+          : /motorway/.test(id) ? c.motor : /trunk|primary|secondary|tertiary|major/.test(id) ? c.major : /path|track|service|pedestrian|steps|pier/.test(id) ? c.minor : sl === 'transportation' || sl === 'aeroway' ? c.road : c.minor;
+      } else if (l.type === 'symbol') {
+        p['text-color'] = sl === 'water_name' || sl === 'waterway' ? c.wtext : sl === 'place' || sl === 'transportation_name' ? c.text : c.text2;
+        p['text-halo-color'] = c.halo; p['text-halo-width'] = 1.5;
+      }
+    });
+    return st;
+  }
   async function style(name) {
     if (!cache[name]) {
-      const st = await getJSON(STYLES + name, {}, 8000);
+      const st = await getJSON(STYLES + (name === 'noir' ? 'liberty' : name), {}, 8000);
       if (!st || !Array.isArray(st.layers) || !st.sources) throw new Error('style');
       frLabels(st);
+      if (name === 'noir') noir(st);
       cache[name] = JSON.stringify(st);
     }
     return JSON.parse(cache[name]);

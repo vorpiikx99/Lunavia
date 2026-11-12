@@ -159,7 +159,7 @@
     let st = null;
     if (S.mode === 'demo') st = D.style(isDark());
     else {
-      try { st = await J.live.style(isDark() ? 'dark' : 'liberty'); }
+      try { st = await J.live.style(isDark() ? 'noir' : 'liberty'); }
       catch (e) { try { st = await J.live.style('liberty'); } catch (e2) { return; } }
     }
     map.setStyle(st, { diff: false });
@@ -902,6 +902,8 @@
     alt(el) { S.sel = +el.dataset.i; drawRoutes(false); render(); },
     start() { startNav(false); },
     sim() { startNav(true); },
+    // bouton palette : carte claire ou noir doux ; le choix est gardé pour les prochaines ouvertures
+    theme() { const next = isDark() ? 'light' : 'dark'; db.set.theme = next; save(); document.documentElement.setAttribute('data-theme', next); themeUI(); toast(next === 'dark' ? 'Carte en noir doux' : 'Carte claire'); },
     stop() { if (!S.nav) return; endNav(); if (S.routes.length && S.dest) { go('route'); drawRoutes(true); } else { clearRoute(); setDest(null); go('home'); } },
     voice() { db.set.voice = !db.set.voice; save(); if (!db.set.voice) { try { speechSynthesis.cancel(); } catch (e) { /* rien */ } } else say('Voix activée'); render(); },
     'sim-pause'() { if (S.sim) { S.sim.paused = !S.sim.paused; render(); } },
@@ -1003,7 +1005,8 @@
     }, { passive: true });
     if (window.ResizeObserver) new ResizeObserver(syncInsets).observe(sheet);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.nav) wake(true); });
-    const themed = () => { setBase(); };
+    const themed = () => { setBase(); themeUI(); };
+    themeUI();
     if (mq) { if (mq.addEventListener) mq.addEventListener('change', themed); else if (mq.addListener) mq.addListener(themed); }
     if (window.MutationObserver) new MutationObserver(themed).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     try { if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); } } catch (e) { /* pas de voix */ }
@@ -1069,6 +1072,7 @@
     if (left > 0) await new Promise(r => setTimeout(r, left));
   }
   function hideSplash() { const sp = $('#splash'); if (!sp || sp.hidden) return; sp.classList.add('out'); setTimeout(() => { sp.hidden = true; }, 320); }
+  function themeUI() { const b = $('#theme'); if (b) { b.classList.toggle('on', isDark()); b.setAttribute('aria-pressed', isDark()); } }
   async function boot() {
     const upd = checkUpdate().catch(() => {});
     S.upd = upd;
@@ -1077,6 +1081,7 @@
     $('#reportbtn').innerHTML = J.signs.danger;
     $('#chips').innerHTML = CATS.map(c => '<button type="button" class="chip" data-act="cat" data-k="' + c.id + '" aria-pressed="false">' + ic(c.icon) + c.label + '</button>').join('');
     db = load();
+    if (db.set.theme === 'dark' || db.set.theme === 'light') document.documentElement.setAttribute('data-theme', db.set.theme);
     bind();
     if (!window.maplibregl) { fail('La carte n’a pas pu se charger. Vérifie ta connexion, puis réessaie.'); return; }
     let st = null;
@@ -1084,7 +1089,7 @@
     if (!forced) {
       const t0 = Date.now();
       try { st = await J.live.style('liberty'); } catch (e) { st = null; }
-      if (st && isDark()) { try { st = await J.live.style('dark'); } catch (e) { /* on garde le fond clair */ } }
+      if (st && isDark()) { try { st = await J.live.style('noir'); } catch (e) { /* on garde le fond clair */ } }
       if (!st) {
         const quick = Date.now() - t0 < 600;
         await new Promise(r => setTimeout(r, 60)); // laisse le temps au signalement de blocage d'arriver

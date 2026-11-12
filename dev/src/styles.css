@@ -12,20 +12,20 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#0E1216; --surface:#181D24; --surface-2:#222933; --ink:#EEF1F4; --muted:#9DA8B6; --line:#2E3641;
-    --blue:#12579E; --on-blue:#FFFFFF; --link:#86BDF7; --blue-soft:#1B2D44;
+    --bg:#1B1D22; --surface:#25282E; --surface-2:#31353D; --ink:#ECEEF1; --muted:#A9AEB8; --line:#3D414A;
+    --blue:#1F5FBF; --on-blue:#FFFFFF; --link:#7DB6F9; --blue-soft:#1F3352;
     --yellow:#F7B500; --on-yellow:#15130B;
-    --red:#E0434A; --green:#43A566; --asphalt:#2B333E; --puck:#4C9AF7;
+    --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7;
     --map-ink:#E7EBEF; --map-ink2:#AEB6C0; --map-halo:#11161A; --map-green:#8CBB8F; --map-water:#84BAE2;
     --shadow:0 6px 22px rgba(0,0,0,.55); --shadow-s:0 2px 8px rgba(0,0,0,.5);
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0E1216; --surface:#181D24; --surface-2:#222933; --ink:#EEF1F4; --muted:#9DA8B6; --line:#2E3641;
-  --blue:#12579E; --on-blue:#FFFFFF; --link:#86BDF7; --blue-soft:#1B2D44;
+  --bg:#1B1D22; --surface:#25282E; --surface-2:#31353D; --ink:#ECEEF1; --muted:#A9AEB8; --line:#3D414A;
+  --blue:#1F5FBF; --on-blue:#FFFFFF; --link:#7DB6F9; --blue-soft:#1F3352;
   --yellow:#F7B500; --on-yellow:#15130B;
-  --red:#E0434A; --green:#43A566; --asphalt:#2B333E; --puck:#4C9AF7;
+  --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7;
   --map-ink:#E7EBEF; --map-ink2:#AEB6C0; --map-halo:#11161A; --map-green:#8CBB8F; --map-water:#84BAE2;
   --shadow:0 6px 22px rgba(0,0,0,.55); --shadow-s:0 2px 8px rgba(0,0,0,.5);
   color-scheme:dark;
@@ -86,7 +86,7 @@ h2,h3,p{margin:0}
 #demoflag b{font:700 12.5px/1 var(--cond);letter-spacing:.12em;text-transform:uppercase;border:1.5px solid var(--on-yellow);border-radius:5px;padding:4px 6px}
 #demoflag span{padding-right:8px;font-weight:600}
 .navon #top,#app[data-view="search"] #chips,#app[data-view="search"] #demoflag,#app[data-view="search"] #side,#app[data-view="search"] #attrib{display:none}
-.navon #layers{display:none}
+.navon #layers,.navon #theme{display:none}
 
 /* ---------- panneaux routiers ---------- */
 .sign{padding:3px;border-radius:13px;box-shadow:var(--shadow);width:100%;max-width:460px;box-sizing:border-box}
@@ -204,6 +204,8 @@ a.btn{text-decoration:none}
 .seg button{flex:1;min-height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;color:var(--muted)}
 .seg button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-s)}
 .seg .ic{width:20px;height:20px}
+/* le mode choisi se reconnaît au premier coup d'œil, y compris en noir doux */
+.seg button[aria-selected="true"]{box-shadow:var(--shadow-s), inset 0 0 0 2px var(--link)}
 .alts{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--gr)) 0 calc(-1 * var(--gl));padding:2px var(--gr) 6px var(--gl)}
 .alt{flex:none;width:min(62vw, 214px);box-sizing:border-box;padding:10px 12px;border-radius:12px;border:2px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:3px}
 .alt[aria-checked="true"]{border-color:var(--link);background:var(--blue-soft)}

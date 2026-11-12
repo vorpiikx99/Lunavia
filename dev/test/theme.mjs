@@ -1,0 +1,36 @@
+// Bouton palette : carte claire ↔ noir doux, choix gardé en mémoire. Produit aussi une planche d'images.
+import { openLive, GPS, START, drive } from './live.mjs';
+import { idle } from './lib.mjs';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const res = []; const check = (l, ok, d) => { res.push(ok); console.log((ok ? 'ok   ' : 'FAIL ') + l + (d ? '  ' + d : '')); };
+const t = await openLive({ init: GPS, dpr: 2 }); const { page } = t;
+await page.evaluate(s => window.__fix(s[1], s[0], 0, null, 8), START); await sleep(1500);
+await page.evaluate(() => { J.app.map.jumpTo({ center: [5.1215, 52.0905], zoom: 14.6 }); }); await idle(page);
+const shots = []; const snap = async n => { await idle(page); await sleep(900); shots.push([n, (await page.screenshot()).toString('base64')]); };
+const bg = () => page.evaluate(() => { const l = J.app.map.getStyle().layers.find(x => x.type === 'background'); return [l.paint['background-color'], document.documentElement.getAttribute('data-theme'), getComputedStyle(document.querySelector('#searchbar')).backgroundColor]; });
+const b0 = await bg();
+await page.click('#theme'); await sleep(1500); await idle(page);
+const b1 = await bg();
+check('un appui : carte et habillage passent en noir doux', b1[0] === '#1B1D22' && b1[1] === 'dark' && b1[2] !== b0[2], JSON.stringify(b1));
+await sleep(3000); await snap('Accueil');
+await page.click('#q'); await page.fill('#q', '52.0853, 5.1760'); await page.waitForSelector('#results .row'); await page.click('#results .row >> nth=0');
+await page.waitForFunction(() => J.app.S.view === 'place'); await page.click('[data-act="route"]');
+await page.waitForFunction(() => J.app.S.routes.length > 0, null, { timeout: 25000 }); await idle(page); await sleep(800); await snap('Choix du trajet');
+check('le trajet reste tracé après le changement de couleur', await page.evaluate(() => !!J.app.map.getLayer('route')));
+await page.click('[data-act="start"]'); await page.waitForFunction(() => !!J.app.S.nav);
+await drive(page, { from: 0, to: 420, step: 12, ms: 90, v: 11 }); await sleep(900); await snap('Guidage');
+check('pendant le guidage, le bouton palette est rangé', await page.evaluate(() => getComputedStyle(document.querySelector('#theme')).display === 'none'));
+await page.click('[data-act="stop"]'); await sleep(600);
+await page.click('#sb-set'); await sleep(700); await snap('Réglages');
+// le choix est gardé
+await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => window.J && J.app && J.app.S.mode === 'live' && document.querySelector('#splash').hidden, null, { timeout: 30000 }); await idle(page);
+const b2 = await bg();
+check('après fermeture et réouverture : toujours en noir doux', b2[0] === '#1B1D22' && b2[1] === 'dark', JSON.stringify(b2));
+await page.click('#theme'); await sleep(1500); await idle(page);
+const b3 = await bg();
+check('un autre appui : retour à la carte claire', b3[0] !== '#1B1D22' && b3[1] === 'light', JSON.stringify(b3));
+const html = '<body style="margin:0;background:#2A2E36;font-family:Arial,sans-serif"><div style="display:flex;gap:22px;padding:26px">' + shots.map(([n, b]) => '<figure style="margin:0"><img src="data:image/png;base64,' + b + '" style="width:340px;border-radius:24px;display:block;box-shadow:0 0 0 1px #4A4F59"><figcaption style="color:#fff;font-size:21px;font-weight:700;text-align:center;padding-top:10px">' + n + '</figcaption></figure>').join('') + '</div></body>';
+const p2 = await page.context().newPage(); await p2.setViewportSize({ width: 340 * 4 + 22 * 3 + 52, height: 680 + 100 }); await p2.setContent(html); await sleep(500);
+await p2.screenshot({ path: '/home/claude/jalon/dist/lunavia-noir-doux.png' });
+console.log('erreurs', t.logs.filter(l => !/GPU stall|GL Driver|ERR_BLOCKED|Failed to load|sprite|Expected value|could not be loaded|fetching the script/.test(l)).slice(0, 4).join(' ; ') || 'aucune');
+console.log(res.every(Boolean) ? 'ok   thème' : 'FAIL thème'); process.exit(res.every(Boolean) ? 0 : 1);

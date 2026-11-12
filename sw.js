@@ -1,6 +1,6 @@
 /* Jalon : garde l'appli et les morceaux de carte déjà vus, pour qu'elle s'ouvre même sans réseau.
-   Version 1.2.0-mwd6c9q7 */
-const SHELL = 'jalon-appli-1.2.0-mwd6c9q7', TILES = 'jalon-tuiles-v1', MISC = 'jalon-fond-v1';
+   Version 1.3.0-mwd7cygk */
+const SHELL = 'jalon-appli-1.3.0-mwd7cygk', TILES = 'jalon-tuiles-v1', MISC = 'jalon-fond-v1';
 const CORE = ['./', 'vendor/maplibre-gl.js?v=4.7.1', 'manifest.webmanifest', 'icons/icon-192.png'];
 const MAX_TILES = 600;
 const HERE = self.registration.scope; // le dossier de Jalon, par exemple https://exemple.fr/jeu/jalon/
