@@ -351,3 +351,16 @@ a.btn{text-decoration:none}
 .repnote{font-size:16px;font-weight:600;margin:6px 0 2px;overflow-wrap:anywhere}
 
 .empty.more{padding:10px 0 4px;font-size:13px}
+
+/* zone de danger : bandeau jaune sous le panneau de guidage, sans emplacement précis */
+#zone{display:flex;align-items:center;gap:10px;margin-top:8px;padding:7px 14px 7px 8px;border-radius:12px;background:var(--yellow);color:#151A21;box-shadow:var(--shadow);border:2px solid #151A21;max-width:100%}
+#zone.in{animation:zn 1.6s ease-in-out 2}
+#zone .zi{width:30px;height:30px;border-radius:50%;background:#151A21;color:var(--yellow);display:grid;place-items:center;font:800 20px/1 var(--cond)}
+#zone .zt{display:grid;line-height:1.15}
+#zone b{font:700 17px var(--cond);letter-spacing:.03em;text-transform:uppercase}
+#zone small{font-size:13px}
+@keyframes zn{50%{background:#FFD95A}}
+/* micro : commande vocale */
+[data-act="mic"].on{color:var(--red)}
+.keyf{display:grid;gap:5px;font-size:13.5px;font-weight:600;color:var(--muted);margin:6px 0}
+.keyf input{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);font:500 16px ui-monospace,Menlo,monospace;padding:0 12px;box-sizing:border-box;width:100%}

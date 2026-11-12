@@ -6,6 +6,7 @@
       <form id="searchbar" role="search" autocomplete="off">
         <button type="button" class="iconbtn" id="sb-lead" data-act="lead" aria-label="Lunavia"></button>
         <input id="q" type="search" enterkeyhint="search" placeholder="Où va-t-on ?" aria-label="Rechercher une adresse ou un lieu" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button type="button" class="iconbtn" id="sb-mic" data-act="mic" aria-label="Commande vocale" data-ic="mic" hidden></button>
         <button type="button" class="iconbtn" id="sb-clear" data-act="clear" aria-label="Effacer la recherche" data-ic="close" hidden></button>
         <button type="button" class="iconbtn" id="sb-set" data-act="settings" aria-label="Réglages" data-ic="gear"></button>
       </form>
@@ -28,6 +29,8 @@
         <div class="al-b"><button type="button" data-act="al-yes">Toujours là</button><button type="button" data-act="al-no">Plus là</button></div>
       </div>
     </div>
+
+    <div id="zone" role="status" hidden><span class="zi" aria-hidden="true">!</span><span class="zt"><b id="zone-t"></b><small id="zone-s"></small></span></div>
 
     <div id="side">
       <button type="button" class="fab report" id="reportbtn" data-act="report" aria-label="Signaler un événement sur la route"></button>

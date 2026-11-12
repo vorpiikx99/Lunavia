@@ -302,6 +302,15 @@ J.live = (function () {
     }
     throw err;
   }
+  // points de contrôle le long d'un trajet (OpenStreetMap), pour en déduire des zones de danger : jamais affichés tels quels
+  async function cameras(geom) {
+    const step = Math.max(1, Math.ceil(geom.length / 140)), pts = [];
+    for (let i = 0; i < geom.length; i += step) pts.push(geom[i]);
+    pts.push(geom[geom.length - 1]);
+    const line = pts.map(p => p[1].toFixed(5) + ',' + p[0].toFixed(5)).join(',');
+    const j = await overpass('[out:json][timeout:12];node(around:70,' + line + ')["highway"="speed_camera"];out 60;', 14000);
+    return (j.elements || []).filter(e => isFinite(e.lat) && isFinite(e.lon)).map(e => ({ id: e.id, ll: [e.lon, e.lat] }));
+  }
   const PQ = {
     fuel: 'nwr["amenity"="fuel"]', charge: 'nwr["amenity"="charging_station"]',
     parking: 'nwr["amenity"="parking"]["access"!~"^(private|no|customers|permit)$"]',
@@ -428,5 +437,5 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();

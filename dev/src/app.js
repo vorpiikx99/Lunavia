@@ -33,7 +33,7 @@
 
   /* ---------- mémoire de l'appareil ---------- */
   const KEY = 'jalon.v1';
-  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole' };
+  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '' };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { d = {}; }
@@ -83,12 +83,33 @@
     } catch (e) { /* pas de son ici */ }
   }
   let wl = null;
-  async function wake(on) {
+  /* Écran allumé pendant le guidage. Le verrou du navigateur peut être refusé ou relâché (appli passée en arrière-plan,
+     économie d'énergie) : on le redemande dès que l'appli revient à l'écran et on le surveille. S'il n'existe pas ou
+     échoue, une minuscule vidéo muette qui tourne en boucle empêche la mise en veille. */
+  let wantAwake = false, nsv = null;
+  const NSV = 'data:video/mp4;base64,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';
+  function videoAwake(on) {
     try {
-      if (on) { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } }
-      else if (wl) { const w = wl; wl = null; await w.release(); }
-    } catch (e) { wl = null; }
+      if (on) {
+        if (!nsv) { nsv = document.createElement('video'); nsv.muted = true; nsv.loop = true; nsv.setAttribute('playsinline', ''); nsv.setAttribute('muted', ''); nsv.setAttribute('aria-hidden', 'true'); nsv.src = NSV; nsv.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:1'; document.body.appendChild(nsv); }
+        const pr = nsv.play(); if (pr && pr.catch) pr.catch(() => {});
+      } else if (nsv) { nsv.pause(); nsv.remove(); nsv = null; }
+    } catch (e) { /* pas de vidéo possible ici */ }
   }
+  async function wake(on) {
+    wantAwake = !!on;
+    if (!on) { videoAwake(false); if (wl) { const w = wl; wl = null; try { await w.release(); } catch (e) { /* déjà relâché */ } } return; }
+    if (!('wakeLock' in navigator)) { videoAwake(true); return; }
+    if (wl) return;
+    try {
+      const w = await navigator.wakeLock.request('screen');
+      wl = w; videoAwake(false);
+      w.addEventListener('release', () => { if (wl === w) wl = null; if (wantAwake && document.visibilityState === 'visible') setTimeout(() => wake(true), 300); });
+      if (!wantAwake) wake(false);
+    } catch (e) { wl = null; videoAwake(true); }
+  }
+  document.addEventListener('visibilitychange', () => { if (wantAwake && document.visibilityState === 'visible') wake(true); });
+  setInterval(() => { if (wantAwake && !wl && document.visibilityState === 'visible') wake(true); }, 15000);
   function fail(msg, demo) {
     mapEl.innerHTML = '<div class="fail"><div>' + J.logo + '<p>' + esc(msg) + '</p><div class="actions"><button type="button" class="btn primary" data-act="reload">Réessayer</button>' + (demo ? '<button type="button" class="btn" data-act="force-demo">Voir la démo</button>' : '') + '</div></div></div>';
     sheet.hidden = true; $('#ui').hidden = true;
@@ -154,6 +175,10 @@
       src('sat', { type: 'raster', tiles: [J.live.ORTHO], tileSize: (window.devicePixelRatio || 1) >= 1.5 ? 128 : 256, maxzoom: 19 });
       lay({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: S.base === 'sat' ? 'visible' : 'none' } });
     }
+    if (S.mode === 'live' && trafficOn()) {
+      src('traffic', { type: 'raster', tiles: ['https://api.tomtom.com/maps/orbis/traffic/flow/raster/tile/{z}/{x}/{y}?apiVersion=2&key=' + encodeURIComponent(db.set.tkey.trim()) + '&style=' + (isDark() ? 'dark' : 'light') + '&tileSize=512'], tileSize: 512, minzoom: 6, maxzoom: 20, attribution: '© TomTom' });
+      lay({ id: 'traffic', type: 'raster', source: 'traffic', paint: { 'raster-opacity': 0.85 } });
+    }
     src('acc', { type: 'geojson', data: SRC.acc });
     lay({ id: 'acc', type: 'fill', source: 'acc', paint: { 'fill-color': c.line, 'fill-opacity': 0.14 } });
     src('alts', { type: 'geojson', data: SRC.alts });
@@ -177,7 +202,7 @@
   function attrib() {
     const el = $('#attrib');
     if (S.mode === 'demo') { el.textContent = 'Carte de démonstration'; return; }
-    el.innerHTML = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '');
+    el.innerHTML = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '') + (trafficOn() ? ' · Trafic © TomTom' : '');
   }
   function mk(html, cls, opts) {
     const el = document.createElement('div');
@@ -421,6 +446,39 @@
     $('#al-sub').textContent = (x.d > 15 ? 'à ' + F.dist(x.d) : 'ici') + ' · ' + F.ago(x.rp.t) + (x.rp.note ? ' · « ' + x.rp.note + ' »' : '');
     el.hidden = false;
   }
+  /* Zones de danger. En France, une appli n'a pas le droit d'indiquer l'emplacement exact d'un radar : elle annonce une
+     zone (4 km sur voie rapide, 2 km hors agglomération, 300 m en ville) dans laquelle il se trouve, sans dire où.
+     Le point de contrôle est placé à un endroit variable de la zone, jamais affiché sur la carte. */
+  async function loadZones(n) {
+    if (!db.set.zones || n.travel !== 'car' || S.mode !== 'live' || !P.cameras) return;
+    try {
+      const cams = await P.cameras(n.route.geom);
+      if (S.nav !== n) return;
+      const r = n.route, zs = [];
+      cams.forEach(c => {
+        const m = G.nearest(r.geom, r.cum, c.ll, 0, r.geom.length - 2);
+        if (m.d > 40) return;
+        const le = (n.lim || []).find(x => m.s >= x.s0 && m.s <= x.s1), lim = le ? Math.abs(le.v || 0) : 0, len = lim >= 100 ? 4000 : lim > 0 && lim <= 50 ? 300 : 2000;
+        let h = 0; String(c.id).split('').forEach(ch => { h = (h * 31 + ch.charCodeAt(0)) % 1000; });
+        const f = 0.3 + (h / 1000) * 0.5, s0 = Math.max(0, m.s - len * f), s1 = Math.min(r.dist, s0 + len);
+        zs.push({ s0, s1 });
+      });
+      zs.sort((a, b) => a.s0 - b.s0);
+      n.zones = zs.reduce((acc, z) => { const l = acc[acc.length - 1]; if (l && z.s0 <= l.s1 + 150) l.s1 = Math.max(l.s1, z.s1); else acc.push(z); return acc; }, []);
+    } catch (e) { /* service indisponible : pas de zones pour ce trajet */ }
+  }
+  function zoneUI(n) {
+    const el = $('#zone');
+    if (!el) return;
+    const z = n && n.zones ? n.zones.find(x => n.s >= x.s0 - 400 && n.s <= x.s1) : null;
+    if (!z) { if (!el.hidden) el.hidden = true; if (n) n.zoneIn = null; return; }
+    const inside = n.s >= z.s0;
+    $('#zone-t').textContent = inside ? 'Zone de danger' : 'Zone de danger dans ' + F.dist(z.s0 - n.s);
+    $('#zone-s').textContent = inside ? 'encore ' + F.dist(z.s1 - n.s) : 'sur ' + F.dist(z.s1 - z.s0);
+    el.classList.toggle('in', inside);
+    el.hidden = false;
+    if (n.zoneSaid !== z) { n.zoneSaid = z; say('Attention, zone de danger' + (inside ? '' : ' dans ' + F.say(z.s0 - n.s))); }
+  }
   function indexReports() {
     const n = S.nav;
     if (!n) return;
@@ -479,6 +537,44 @@
     if (!S.pick) { add(db.home, 'maison'); add(db.work, 'travail'); }
     db.favs.forEach(p => add(p)); db.recents.forEach(p => add(p));
     return out.slice(0, 3);
+  }
+  /* Commande vocale : « emmène-moi à la maison », « va à la gare de Narbonne », « station essence »,
+     « signale un bouchon », « arrête le guidage ». Disponible seulement si le navigateur sait reconnaître la parole. */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micUI = on => document.querySelectorAll('[data-act="mic"]').forEach(b => { b.hidden = !SR; b.classList.toggle('on', !!on); b.setAttribute('aria-pressed', !!on); });
+  function listen() {
+    if (!SR) { toast('La commande vocale n’est pas disponible sur ce navigateur.'); return; }
+    if (S.rec) { try { S.rec.stop(); } catch (e) { /* déjà arrêté */ } return; }
+    let r;
+    try { r = new SR(); } catch (e) { toast('La commande vocale n’est pas disponible ici.'); return; }
+    r.lang = 'fr-FR'; r.interimResults = false; r.maxAlternatives = 1;
+    S.rec = r; micUI(true); toast('Je t’écoute…');
+    try { speechSynthesis.cancel(); } catch (e) { /* pas de voix */ }
+    r.onresult = e => { const t = e.results && e.results[0] && e.results[0][0] ? e.results[0][0].transcript : ''; if (t) command(t); };
+    r.onerror = e => { toast(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'Micro indisponible. Sur iPhone, la commande vocale marche dans Safari, pas depuis l’icône de l’écran d’accueil ; sinon, autorise le micro pour ce site.' : e.error === 'no-speech' ? 'Je n’ai rien entendu.' : 'Je n’ai pas compris. Réessaie.'); };
+    r.onend = () => { S.rec = null; micUI(false); };
+    try { r.start(); } catch (e) { S.rec = null; micUI(false); }
+  }
+  const VREP = [[/bouchon|embouteillage|ralentissement/, 'jam'], [/accident|accrochage/, 'crash'], [/travaux|chantier/, 'works'], [/controle|police|gendarme/, 'control'], [/route (fermee|barree|coupee)/, 'closed'], [/danger|obstacle|animal|objet/, 'danger']];
+  const VCAT = [[/essence|carburant|station|gazole|diesel/, 'fuel'], [/recharge|borne/, 'charge'], [/parking|me garer|se garer/, 'parking'], [/restaurant|resto|manger/, 'food'], [/courses|supermarche|magasin/, 'shop'], [/pharmacie/, 'pharma']];
+  async function command(text) {
+    const t = plain(text).replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    if (/^(stop|arrete|arreter|annule|annuler|termine|terminer)\b/.test(t)) { if (S.nav) { ACT.stop(); say('Guidage arrêté', true); } else toast('Aucun guidage en cours.'); return; }
+    if (/signale|signaler|signalement|il y a/.test(t)) { const hit = VREP.find(x => x[0].test(t)); if (hit) { ACT.rep({ dataset: { k: hit[1] } }); say(REPORTS[hit[1]].said, true); return; } }
+    const go2 = /^(emmene[ -]moi|amene[ -]moi|conduis[ -]moi|guide[ -]moi|va|aller|on va|je veux aller|je vais|navigue|itineraire|direction|route)\b/.test(t);
+    if (/\b(maison|chez moi|domicile)\b/.test(t) && db.home) { S.place = null; say('En route vers la maison', true); plan(db.home); return; }
+    if (/\b(travail|boulot|bureau)\b/.test(t) && db.work) { S.place = null; say('En route vers le travail', true); plan(db.work); return; }
+    if (!S.nav) { const cat = VCAT.find(x => x[0].test(t)); if (cat && t.split(' ').length <= 4) { showPois(cat[1]); return; } }
+    const q = text.replace(/^\s*(emm[eè]ne[ -]moi|am[eè]ne[ -]moi|conduis[ -]moi|guide[ -]moi|je veux aller|on va|je vais|va|aller|navigue|itin[ée]raire|direction|route)\s+(jusqu[’']?\s?|vers\s+|pour\s+)?(à la |à l[’']|au |aux |à |a |chez )?/i, '').trim();
+    if (!q) return;
+    if (S.nav) { toast('Arrête le guidage pour choisir une autre destination.'); return; }
+    if (go2) {
+      toast('Je cherche « ' + q + ' »…');
+      try { const r = await P.search(q, S.pos ? S.pos.ll : center()); if (r && r[0]) { say('En route vers ' + r[0].name, true); S.place = null; plan(r[0]); return; } } catch (e) { /* on montre la recherche */ }
+    }
+    if (S.view !== 'search') { S.prev = S.view; go('search'); }
+    input.value = q; S.q = q; $('#sb-clear').hidden = false; S.results = null; S.searching = true; renderResults(); runSearch(q);
   }
   let searchCtl = null;
   async function runSearch(q) {
@@ -691,6 +787,7 @@
     if (sim) startSim(r); // avant l'affichage : la barre « Trajet simulé » en dépend
     go('nav');
     routeColors();
+    loadZones(S.nav);
     wake(true);
     const first = r.steps[0], nx = r.steps[1];
     say('C’est parti. ' + sayText(first) + (nx && nx.s0 > 60 && nx.type !== 'arrive' ? '. Puis, dans ' + F.say(nx.s0) + ', ' + fr.lower(sayText(nx)) : ''), true);
@@ -701,6 +798,7 @@
     stopSim(); wake(false);
     if (S.pos) S.pos.speed = 0;
     anReset();
+    zoneUI(null);
     S.nav = null; S.limit = null; limitUI();
     routeColors();
     setAlert(null);
@@ -759,7 +857,7 @@
     }
     else if (dn <= far && dn > near * 1.7 && !n.said['f' + key]) { n.said['f' + key] = 1; say('Dans ' + F.say(dn) + ', ' + fr.lower(sayText(nx))); }
     else if (changed && cur.len > 1500 && dn > far * 1.5) say('Continuez pendant ' + F.say(dn));
-    navUI();
+    navUI(); zoneUI(n);
     navAlerts(n.s);
     setGrad(n.s / r.dist);
   }
@@ -796,7 +894,7 @@
   }
   function vNav() {
     const on = db.set.voice;
-    return '<div class="navbar"><div class="nb-main"><b id="nb-eta">–:––</b><span>arrivée</span></div><div><b id="nb-rem">–</b><span id="nb-dist">–</span></div><div class="nb-btns"><button type="button" class="iconbtn" data-act="voice" aria-pressed="' + on + '" aria-label="Voix du guidage">' + ic(on ? 'vol' : 'volx') + '</button><button type="button" class="btn danger" data-act="stop">Arrêter</button></div></div>' +
+    return '<div class="navbar"><div class="nb-main"><b id="nb-eta">–:––</b><span>arrivée</span></div><div><b id="nb-rem">–</b><span id="nb-dist">–</span></div><div class="nb-btns"><button type="button" class="iconbtn" data-act="mic" aria-label="Commande vocale"' + (SR ? '' : ' hidden') + '>' + ic('mic') + '</button><button type="button" class="iconbtn" data-act="voice" aria-pressed="' + on + '" aria-label="Voix du guidage">' + ic(on ? 'vol' : 'volx') + '</button><button type="button" class="btn danger" data-act="stop">Arrêter</button></div></div>' +
       (S.sim ? '<div class="simbar"><span>Trajet simulé</span><button type="button" class="chip sm" data-act="sim-pause" aria-pressed="' + S.sim.paused + '">' + ic(S.sim.paused ? 'play' : 'pause') + (S.sim.paused ? 'Reprendre' : 'Pause') + '</button><button type="button" class="chip sm" data-act="sim-speed">Vitesse ×' + S.sim.mult + '</button></div>' : '');
   }
   function vArrived() {
@@ -895,7 +993,10 @@
     if (db.work) places += pl('Travail', db.work, 'work');
     db.favs.forEach((p, i) => { places += pl(p.name, { name: p.sub }, 'fav' + i); });
     if (db.parked) places += pl('Ma voiture', { name: 'Garée ' + F.ago(db.parked.t) }, 'parked');
-    return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') +
+    return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') +
+      '<h3>Trafic en direct</h3>' + tog('traffic', 'Afficher le trafic sur la carte') +
+      '<label class="keyf" for="set-tkey">Clé TomTom<input id="set-tkey" type="text" data-set="tkey" value="' + esc(s.tkey || '') + '" placeholder="Colle ta clé ici" autocomplete="off" autocapitalize="off" spellcheck="false"></label>' +
+      '<p class="note">' + (S.mode !== 'live' ? 'Le trafic s’affiche sur la vraie carte, pas dans la démo.' : trafficOn() ? 'Trafic actif : vert fluide, orange ralenti, rouge bouchon. La clé reste sur cet appareil.' : 'Le trafic vient de TomTom, avec une clé gratuite (sans carte bancaire). Elle reste sur cet appareil.') + '</p>' +
       '<h3>Coût du trajet</h3>' +
       '<label class="field" for="set-conso">Consommation<span><input id="set-conso" type="number" inputmode="decimal" step="0.1" min="1" max="30" value="' + s.conso + '" data-set="conso">L/100 km</span></label>' +
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
@@ -992,6 +1093,7 @@
     sim() { startNav(true); },
     // bouton palette : carte claire ou noir doux ; le choix est gardé pour les prochaines ouvertures
     theme() { const next = isDark() ? 'light' : 'dark'; db.set.theme = next; save(); document.documentElement.setAttribute('data-theme', next); themeUI(); toast(next === 'dark' ? 'Carte en noir doux' : 'Carte claire'); },
+    mic() { listen(); },
     stop() { if (!S.nav) return; endNav(); if (S.routes.length && S.dest) { go('route'); drawRoutes(true); } else { clearRoute(); setDest(null); go('home'); } },
     voice() { db.set.voice = !db.set.voice; save(); if (!db.set.voice) { try { speechSynthesis.cancel(); } catch (e) { /* rien */ } } else say('Voix activée'); render(); },
     'sim-pause'() { if (S.sim) { S.sim.paused = !S.sim.paused; render(); } },
@@ -1005,7 +1107,7 @@
       db.reports.push(rp); save(); drawReports();
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
-      close();
+      if (S.view === 'report') close(); // posé à la voix : on reste sur l'écran en cours
       if (type === 'closed' && S.nav && S.pos) reroute(S.pos);
       toast(REPORTS[type].said + ' ici' + (S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
     },
@@ -1061,6 +1163,7 @@
       else if (t.type === 'number') { const v = parseFloat(String(t.value).replace(',', '.')); if (v >= +t.min && v <= +t.max) db.set[k] = v; else t.value = db.set[k]; }
       else db.set[k] = t.value;
       save();
+      if (k === 'tkey' || k === 'traffic') { setBase(); attrib(); if (k === 'tkey') toast(trafficOn() ? 'Trafic activé' : db.set.tkey ? 'Cette clé n’a pas la bonne forme.' : 'Trafic désactivé'); }
     });
     $('#searchbar').addEventListener('submit', e => e.preventDefault());
     input.addEventListener('focus', () => { if (S.view !== 'search') { S.prev = S.view; go('search'); } });
@@ -1100,6 +1203,7 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.nav) wake(true); });
     const themed = () => { setBase(); themeUI(); };
     themeUI();
+    micUI(false);
     if (mq) { if (mq.addEventListener) mq.addEventListener('change', themed); else if (mq.addListener) mq.addListener(themed); }
     if (window.MutationObserver) new MutationObserver(themed).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     try { if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); } } catch (e) { /* pas de voix */ }
@@ -1165,6 +1269,7 @@
     if (left > 0) await new Promise(r => setTimeout(r, left));
   }
   function hideSplash() { const sp = $('#splash'); if (!sp || sp.hidden) return; sp.classList.add('out'); setTimeout(() => { sp.hidden = true; }, 320); }
+  const trafficOn = () => !!(db && db.set.traffic && /^[A-Za-z0-9]{20,60}$/.test(String(db.set.tkey || '').trim()));
   function themeUI() { const b = $('#theme'); if (b) { b.classList.toggle('on', isDark()); b.setAttribute('aria-pressed', isDark()); } }
   async function boot() {
     const upd = checkUpdate().catch(() => {});

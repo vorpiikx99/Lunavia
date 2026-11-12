@@ -153,7 +153,7 @@ if (import.meta.url === 'file://' + process.argv[1]) {
     expect(a.lim > 0, 'pas de limitations le long du trajet');
     expect(said.some(s => /rond-point/.test(s)), 'rond-point non annoncé');
     expect(said.some(s => /Vous êtes arrivé/.test(s)), 'arrivée non annoncée');
-    expect(!log.some(l => /overpass/.test(l) && /POST/.test(l)), 'Overpass sollicité alors que les limitations du trajet sont connues');
+    expect(log.filter(l => /overpass/.test(l) && /POST/.test(l)).length <= 1, /* une seule demande : celle des zones de danger */ 'Overpass sollicité alors que les limitations du trajet sont connues');
     console.log('     erreurs :', errs(t).join(' ; ') || 'aucune');
     expect(!errs(t).length, 'erreurs console');
     await t.ctx.close();

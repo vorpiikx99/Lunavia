@@ -157,6 +157,7 @@ http.createServer(async (req, res) => {
     if (host === 'overpass-api.de' || host === 'overpass.private.coffee') {
       if (flags.overpassDown) { res.writeHead(429); return res.end('rate limited'); }
       const b = await body(req), ql = decodeURIComponent((b.match(/data=([^&]*)/) || [])[1] || q.get('data') || '');
+      if (/speed_camera/.test(ql)) return json(res, { elements: flags.camLat ? [{ type: 'node', id: 4242, lat: flags.camLat, lon: flags.camLon }] : [] });
       return json(res, overpass(ql));
     }
     if (host === 'data.economie.gouv.fr') { if (flags.fuelDown) { res.writeHead(500); return res.end(); } return json(res, fuel(q)); }

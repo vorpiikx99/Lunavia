@@ -20,6 +20,7 @@ J.ic = (function () {
     walk: '<circle cx="13" cy="4.300" r="1.900" fill="currentColor" stroke="none"/><path d="M13.200 8.200 9.800 10.600v3.600M13.200 8.200l1.700 4 3.300 1.700M12.300 12.600l1.500 3.600.9 5.300M11 15.200l-1.200 3-2.300 3.300"/>',
     clock: '<circle cx="12" cy="12" r="8.500"/><path d="M12 7.200V12l3.300 2"/>',
     flag: '<path d="M6 21V4M6 4.500h12l-3 4 3 4H6"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.500 11.500a6.500 6.500 0 0 0 13 0M12 18v3"/>',
     vol: '<path d="M4 9.500v5h3.500L12 18.200V5.800L7.500 9.500z"/><path d="M15.500 9.200a4 4 0 0 1 0 5.600M18 6.800a7.500 7.500 0 0 1 0 10.400"/>',
     volx: '<path d="M4 9.500v5h3.500L12 18.200V5.800L7.500 9.500z"/><path d="M16 9.500l5 5M21 9.500l-5 5"/>',
     share: '<path d="M12 15V3.500M8 7.200l4-3.700 4 3.700M5.500 12v7.500h13V12"/>',
@@ -63,7 +64,7 @@ J.signs = (function () {
 
 /* le jalon : piquet d'arpenteur rouge et blanc, utilisé pour le logo et le repère de destination */
 J.logo = '<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="6" fill="#16093A" stroke="#F2B544" stroke-width="1.3"/><path d="M12 5.200l6 13.200-6-3.300-6 3.300z" fill="#fff" stroke="#C56BFF" stroke-width="1.1" stroke-linejoin="round"/></svg>';
-J.pin = '<svg class="jpin" viewBox="0 0 30 50" width="30" height="50" aria-hidden="true"><ellipse cx="15" cy="48" rx="6" ry="1.800" fill="rgba(0,0,0,.28)"/><path d="M12.400 21h5.200v7h-5.200z" fill="#fff"/><path d="M12.400 28h5.200v7h-5.200z" fill="#C1121C"/><path d="M12.400 35h5.200v6L15 47.500 12.400 41z" fill="#fff"/><path d="M12.400 21h5.200v20L15 47.500 12.400 41z" fill="none" stroke="#151A21" stroke-width="1"/><circle cx="15" cy="12" r="10.500" fill="#C1121C" stroke="#fff" stroke-width="2.400"/><circle cx="15" cy="12" r="3.600" fill="#fff"/></svg>';
+J.pin = '<svg class="jpin" viewBox="0 0 30 50" width="30" height="50" aria-hidden="true"><ellipse cx="15" cy="48" rx="6" ry="1.800" fill="rgba(0,0,0,.28)"/><path d="M12.400 21h5.200v7h-5.200z" fill="#fff"/><path d="M12.400 28h5.200v7h-5.200z" fill="#7D5BFF"/><path d="M12.400 35h5.200v6L15 47.500 12.400 41z" fill="#fff"/><path d="M12.400 21h5.200v20L15 47.500 12.400 41z" fill="none" stroke="#2A1670" stroke-width="1"/><circle cx="15" cy="12" r="10.500" fill="#7D5BFF" stroke="#fff" stroke-width="2.400"/><circle cx="15" cy="12" r="3.600" fill="#fff"/></svg>';
 
 /* flèche de manœuvre dessinée d'après l'angle du virage */
 J.arrow = function (s) {
