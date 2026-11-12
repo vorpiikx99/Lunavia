@@ -1,0 +1,20 @@
+{
+  "name": "Lunavia",
+  "short_name": "Lunavia",
+  "description": "La carte qui réunit le meilleur des applis de navigation : recherche, itinéraires, guidage vocal, signalements, prix des carburants.",
+  "lang": "fr",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#EDEFE9",
+  "theme_color": "#0F4C8A",
+  "categories": ["navigation", "travel"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

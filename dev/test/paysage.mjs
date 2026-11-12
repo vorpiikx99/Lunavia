@@ -1,0 +1,46 @@
+// Téléphone couché (852 × 393) : accueil, choix du trajet, guidage, puis rotation en cours de guidage et bouton « Arrêter ».
+import { openLive, GPS, START, drive } from './live.mjs';
+import { idle } from './lib.mjs';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const res = []; const check = (l, ok, d) => { res.push(ok); console.log((ok ? 'ok   ' : 'FAIL ') + l + (d ? '  ' + d : '')); };
+const t = await openLive({ init: GPS, w: 852, h: 393, dpr: 2 });
+const { page, shot } = t;
+await page.evaluate(s => window.__fix(s[1], s[0], 0, null, 8), START); await sleep(1800);
+await shot('paysage-1-accueil');
+const boxes = sel => page.evaluate(s => { const e = document.querySelector(s); if (!e || e.hidden) return null; const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)]; }, sel);
+const hit = sel => page.evaluate(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); const x = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!x && (x === e || e.contains(x)); }, sel);
+await page.click('#q'); await page.fill('#q', '52.0853, 5.1760');
+await page.waitForSelector('#results .row'); await shot('paysage-2-recherche'); await page.click('#results .row >> nth=0');
+await page.waitForFunction(() => J.app.S.view === 'place'); await sleep(600); await shot('paysage-3-lieu');
+await page.click('[data-act="route"]');
+await page.waitForFunction(() => J.app.S.routes.length > 0, null, { timeout: 25000 }); await idle(page); await sleep(700);
+await shot('paysage-4-trajet');
+check('trajet : bouton Démarrer visible et touchable', await hit('[data-act="start"]'));
+await page.click('[data-act="start"]');
+await page.waitForFunction(() => !!J.app.S.nav);
+await drive(page, { from: 0, to: 260, step: 12, ms: 90, v: 11 }); await sleep(900);
+await shot('paysage-5-guidage');
+const b = { sign: await boxes('#navsign'), sheet: await boxes('#sheet'), speed: await boxes('#speed'), side: await boxes('#side') };
+console.log('      ', JSON.stringify(b));
+const over = (a, c) => a && c && a[0] < c[2] && c[0] < a[2] && a[1] < c[3] && c[1] < a[3];
+check('guidage : rien ne se chevauche', !over(b.sign, b.sheet) && !over(b.sheet, b.speed) && !over(b.speed, b.side) && !over(b.sign, b.speed));
+check('guidage : la durée tient sur une ligne', await page.evaluate(() => document.querySelector('#nb-rem').getBoundingClientRect().height < 34));
+check('guidage : Arrêter touchable', await hit('[data-act="stop"]'));
+// rotation en plein guidage : portrait, puis de nouveau couché
+await page.setViewportSize({ width: 393, height: 852 }); await sleep(1300); await shot('paysage-6-portrait');
+check('après rotation en portrait : Arrêter touchable', await hit('[data-act="stop"]'));
+await page.setViewportSize({ width: 852, height: 393 }); await sleep(1300);
+check('retour couché : Arrêter touchable', await hit('[data-act="stop"]'));
+await page.click('[data-act="stop"]'); await sleep(900);
+check('Arrêter arrête le guidage', await page.evaluate(() => !J.app.S.nav && J.app.S.view === 'route'));
+await shot('paysage-7-apres-arret');
+// le toucher seul (sans clic) suffit aussi
+await page.click('[data-act="start"]'); await page.waitForFunction(() => !!J.app.S.nav); await sleep(400);
+await page.evaluate(() => { const e = document.querySelector('[data-act="stop"]'); e.dispatchEvent(new TouchEvent('touchend', { bubbles: true })); }); await sleep(800);
+check('toucher sans clic : le guidage s’arrête quand même', await page.evaluate(() => !J.app.S.nav));
+await page.click('#sb-set').catch(() => {}); await sleep(500);
+check('réglages : plus de liste « le meilleur de chaque appli »', await page.evaluate(() => !/meilleur de chaque|Waze|Citymapper/.test(document.querySelector('#sheet').textContent)));
+await shot('paysage-8-reglages');
+console.log('erreurs', t.logs.filter(l => !/GPU stall|GL Driver|ERR_BLOCKED|Failed to load|sprite|Expected value|could not be loaded/.test(l)).slice(0, 4).join(' ; ') || 'aucune');
+if (t.close) await t.close();
+console.log(res.every(Boolean) ? 'ok   paysage' : 'FAIL paysage'); process.exit(res.every(Boolean) ? 0 : 1);

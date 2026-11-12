@@ -1,0 +1,25 @@
+{
+  "name": "jalon",
+  "version": "1.1.1",
+  "description": "Jalon, la carte qui réunit le meilleur des applis de navigation",
+  "homepage": "https://vorpiikx99.github.io/Lunavia/",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test/demo.mjs && node test/live.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "maplibre-gl": "^4.7.1"
+  },
+  "devDependencies": {
+    "@fontsource/barlow": "^5.3.0",
+    "@fontsource/barlow-condensed": "^5.3.0"
+  },
+  "private": true
+}
