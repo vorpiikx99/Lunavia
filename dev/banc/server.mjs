@@ -148,6 +148,7 @@ http.createServer(async (req, res) => {
       if (seg[0] === 'sprites') { const f = path.join(BED, 'ofm-styles/sprites/sprites', seg[1], seg[2]); if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'content-type': f.endsWith('.json') ? 'application/json' : 'image/png' }); return res.end(fs.readFileSync(f)); }
       res.writeHead(404); return res.end();
     }
+    if (host === 'photon.komoot.io' && flags.photonSlow && !p.startsWith('/reverse')) await new Promise(r => setTimeout(r, flags.photonSlow));
     if (host === 'photon.komoot.io') { if (flags.photonDown) { res.writeHead(503); return res.end(); } return json(res, p.startsWith('/reverse') ? photonReverse(q) : photonSearch(q)); }
     if (host === 'data.geopf.fr') {
       if (p.startsWith('/geocodage')) return json(res, { type: 'FeatureCollection', features: /oude|gracht/i.test(q.get('q') || '') ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [5.1214, 52.0907] }, properties: { label: '12 Oudegracht 3511 Utrecht', score: 0.9, housenumber: '12', id: '99_0001_00012', name: '12 Oudegracht', postcode: '3511', citycode: '99000', city: 'Utrecht', context: '99, Banc', type: 'housenumber', street: 'Oudegracht' } }] : [] });

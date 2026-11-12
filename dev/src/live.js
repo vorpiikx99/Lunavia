@@ -11,6 +11,8 @@ J.live = (function () {
 
   async function getJSON(url, init, ms) {
     const c = new AbortController(), id = setTimeout(() => c.abort(), ms || 12000);
+    const outer = init && init.signal; // une demande devenue inutile (on a tapé autre chose) est coupée tout de suite
+    if (outer) { if (outer.aborted) c.abort(); else outer.addEventListener('abort', () => c.abort(), { once: true }); }
     try {
       const r = await fetch(url, Object.assign({}, init, { signal: c.signal }));
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -90,17 +92,18 @@ J.live = (function () {
     return { id: 'b' + (p.id || c.join(',')), name: String(p.name || p.label || 'Adresse'), sub: [p.type === 'street' ? 'Rue' : p.type === 'locality' ? 'Lieu-dit' : 'Adresse', [p.postcode, p.city].filter(Boolean).join(' ')].filter(Boolean).join(' · '), ll: [+c[0], +c[1]], kind: p.type === 'street' ? 'street' : 'pin', cat: 'address', extra: {}, score: +p.score || 0 };
   }
   const nrm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-  async function photon(q, near) {
+  async function photon(q, near, signal) {
     const bias = near ? '&lat=' + near[1].toFixed(4) + '&lon=' + near[0].toFixed(4) + '&zoom=11&location_bias_scale=0.4' : '';
-    const j = await getJSON('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&lang=fr&limit=8' + bias, {}, 7000);
+    const j = await getJSON('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&lang=fr&limit=8' + bias, { signal }, 6000);
     return (j.features || []).map(photonPlace).filter(Boolean);
   }
-  async function ban(q, near) {
+  async function ban(q, near, signal) {
     const bias = near ? '&lat=' + near[1].toFixed(4) + '&lon=' + near[0].toFixed(4) : '';
-    const j = await getJSON('https://data.geopf.fr/geocodage/search?q=' + encodeURIComponent(q.slice(0, 190)) + '&limit=5&autocomplete=1&index=address' + bias, {}, 5000);
+    const j = await getJSON('https://data.geopf.fr/geocodage/search?q=' + encodeURIComponent(q.slice(0, 190)) + '&limit=5&autocomplete=1&index=address' + bias, { signal }, 4000);
     return (j.features || []).map(banPlace).filter(Boolean);
   }
-  async function search(q, near) {
+  const SEEN = new Map();
+  async function search(q, near, opts) {
     const m = String(q).match(/^\s*(-?\d{1,2}(?:[.,]\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
     if (m) {
       const lat = parseFloat(m[1].replace(',', '.')), lon = parseFloat(m[2].replace(',', '.'));
@@ -108,14 +111,28 @@ J.live = (function () {
     }
     // une requête qui ressemble à une adresse (« 12 rue… ») met la base d'adresses officielle en tête ; sinon les lieux d'abord
     const addr = /^\s*\d{1,4}\s*(bis|ter|[a-d])?[ ,]/i.test(q) || /(^|\s)(rue|avenue|av\.?|bd|boulevard|chemin|impasse|all[ée]e|place|route|quai|cours|lotissement|r[ée]sidence|lieu-dit)\s/i.test(q);
-    const res = await Promise.allSettled([photon(q, near), nrm(q).length >= 3 ? ban(q, near) : Promise.resolve([])]);
-    if (res[0].status !== 'fulfilled' && res[1].status !== 'fulfilled') throw new Error('search');
-    const places = res[0].status === 'fulfilled' ? res[0].value : [];
-    const adr = (res[1].status === 'fulfilled' ? res[1].value : []).filter(p => p.score >= (addr ? 0.4 : 0.6));
-    const list = addr ? adr.slice(0, 4).concat(places) : places.slice(0, 6).concat(adr.slice(0, 2), places.slice(6));
-    const out = [];
-    list.forEach(p => { if (!out.some(o => (nrm(o.name) === nrm(p.name) && G.hav(o.ll, p.ll) < 400) || G.hav(o.ll, p.ll) < 8)) out.push(p); });
-    return out.slice(0, 8);
+    // Les deux sources sont interrogées en même temps, et la première qui répond s'affiche tout de suite (onPartial) :
+    // on n'attend plus la plus lente pour montrer quelque chose. Les réponses récentes sont gardées en mémoire.
+    const key = nrm(q) + '|' + (near ? near[0].toFixed(2) + ',' + near[1].toFixed(2) : '');
+    const hit = SEEN.get(key);
+    if (hit && Date.now() - hit.t < 300000) return hit.list;
+    const merge = (places, adr) => {
+      adr = (adr || []).filter(p => p.score >= (addr ? 0.4 : 0.6)); places = places || [];
+      const list = addr ? adr.slice(0, 4).concat(places) : places.slice(0, 6).concat(adr.slice(0, 2), places.slice(6)), out = [];
+      list.forEach(p => { if (!out.some(o => (nrm(o.name) === nrm(p.name) && G.hav(o.ll, p.ll) < 400) || G.hav(o.ll, p.ll) < 8)) out.push(p); });
+      return out.slice(0, 8);
+    };
+    const signal = opts && opts.signal, part = opts && opts.onPartial;
+    let places = null, adr = null, done = 0;
+    const tell = () => { if (part && done < 2) { const l = merge(places, adr); if (l.length) part(l); } };
+    const a = photon(q, near, signal).then(v => { places = v; done++; tell(); return true; }, () => { done++; return false; });
+    const b = (nrm(q).length >= 3 ? ban(q, near, signal) : Promise.resolve([])).then(v => { adr = v; done++; tell(); return true; }, () => { done++; return false; });
+    const ok = await Promise.all([a, b]);
+    if (signal && signal.aborted) throw new Error('abandon');
+    if (!ok[0] && !ok[1]) throw new Error('search');
+    const out = merge(places, adr);
+    if (ok[0]) { SEEN.set(key, { t: Date.now(), list: out }); if (SEEN.size > 60) SEEN.delete(SEEN.keys().next().value); }
+    return out;
   }
   async function reverse(ll) {
     try {

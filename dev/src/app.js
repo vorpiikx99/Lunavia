@@ -466,25 +466,44 @@
       db.recents.forEach(p => rows.push(row(p, 'clock')));
       h += rows.length ? rows.join('') : '';
       h += '<p class="empty">' + (S.mode === 'demo' ? 'Dans la démo, essaie « boulangerie », « gare » ou « 12 rue Voltaire ».' : 'Tape une adresse, un lieu ou un commerce.') + '</p>';
-    } else if (S.results === null) h += '<p class="empty">Recherche…</p>';
+    } else if (S.results === null || (S.searching && !S.results.length)) h += '<p class="empty">Recherche…</p>';
     else if (!S.results.length) h += '<p class="empty">' + (S.searchErr ? 'La recherche ne répond pas. Vérifie ta connexion et réessaie.' : 'Aucun résultat pour « ' + esc(q) + ' ».' + (S.mode === 'demo' ? ' La démo ne connaît que Val-Lunavia et Saint-Aubin-les-Bornes.' : '')) + '</p>';
-    else h += S.results.map(p => row(p)).join('');
+    else h += S.results.map(p => row(p)).join('') + (S.searching ? '<p class="empty more">Recherche d’autres résultats…</p>' : '');
     $('#results-in').innerHTML = h;
   }
+  // ce que l'appareil connaît déjà (maison, travail, favoris, récents) répond tout de suite, sans réseau
+  const plain = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  function localHits(q) {
+    const words = plain(q).split(/\s+/).filter(Boolean), seen = [], out = [];
+    const add = (p, tag) => { if (!p || seen.indexOf(p.id) >= 0) return; const hay = plain((tag || '') + ' ' + p.name + ' ' + (p.sub || '')); if (words.every(w => hay.indexOf(w) >= 0)) { seen.push(p.id); out.push(p); } };
+    if (!S.pick) { add(db.home, 'maison'); add(db.work, 'travail'); }
+    db.favs.forEach(p => add(p)); db.recents.forEach(p => add(p));
+    return out.slice(0, 3);
+  }
+  let searchCtl = null;
   async function runSearch(q) {
     const seq = ++searchSeq;
     S.searchErr = false;
-    try {
-      const r = await P.search(q, S.pos ? S.pos.ll : center());
+    if (searchCtl) searchCtl.abort(); // la demande précédente ne sert plus : on la coupe pour ne pas encombrer le réseau
+    const ctl = searchCtl = typeof AbortController === 'function' ? new AbortController() : null;
+    const local = localHits(q), show = (list, more) => {
       if (seq !== searchSeq) return;
-      S.results = r;
+      S.results = local.concat(list.filter(p => !local.some(o => o.id === p.id || G.hav(o.ll, p.ll) < 15))).slice(0, 9);
+      S.searching = more;
+      if (S.view === 'search') renderResults();
+    };
+    if (local.length) show([], true);
+    try {
+      const r = await P.search(q, S.pos ? S.pos.ll : center(), { signal: ctl ? ctl.signal : undefined, onPartial: l => show(l, true) });
+      show(r, false);
     } catch (e) {
       if (seq !== searchSeq) return;
-      S.results = []; S.searchErr = true;
+      S.searching = false;
+      if (!S.results || !S.results.length) { S.results = local; S.searchErr = !local.length; }
+      if (S.view === 'search') renderResults();
     }
-    if (S.view === 'search') renderResults();
   }
-  function clearSearch() { S.q = ''; input.value = ''; S.results = null; searchSeq++; clearTimeout(searchT); $('#sb-clear').hidden = true; }
+  function clearSearch() { S.q = ''; input.value = ''; S.results = null; S.searching = false; if (searchCtl) searchCtl.abort(); searchSeq++; clearTimeout(searchT); $('#sb-clear').hidden = true; }
   function exitSearch() { S.pick = null; clearSearch(); input.blur(); go(S.prev === 'search' || S.prev === 'nav' ? 'home' : S.prev); }
   function choose(p) {
     input.blur();
@@ -1052,8 +1071,11 @@
       const q = S.q.trim();
       searchSeq++;
       if (q.length < 2) { S.results = null; renderResults(); return; }
-      S.results = null; renderResults();
-      searchT = setTimeout(() => runSearch(q), 260);
+      // les résultats déjà affichés restent à l'écran pendant qu'on cherche la suite
+      S.searching = true;
+      if (!S.results || !S.results.length) { S.results = null; }
+      renderResults();
+      searchT = setTimeout(() => runSearch(q), 170);
     });
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); if (S.results && S.results[0]) choose(S.results[0]); }
