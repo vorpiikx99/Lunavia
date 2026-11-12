@@ -1805,16 +1805,76 @@ J.live = (function () {
     if (M.org) { M.org.remove(); M.org = null; }
     if (p) M.org = mk('', 'orgdot').setLngLat(p.ll).addTo(map);
   }
+  /* ---------- mouvement fluide ----------
+     Le GPS ne donne qu'une position par seconde, avec du bruit. Plutôt que de faire sauter le repère d'un point au suivant,
+     on le fait glisser en continu : sur un trajet, il avance le long de la route à la vitesse mesurée et se recale en douceur ;
+     hors trajet, il rejoint chaque nouvelle position en glissant. La carte suit le repère image par image. */
+  const AN = { raf: 0, last: 0, s: null, sFix: 0, tFix: 0, v: 0, route: null, p: null, pFix: null, hd: null, vv: 0, rot: null, touch: false, force: false };
+  function anReset() { AN.s = null; AN.route = null; AN.p = null; AN.pFix = null; AN.rot = null; }
+  function anKick() { if (!AN.raf) { AN.last = performance.now(); AN.raf = requestAnimationFrame(anFrame); } }
+  function anRoute(n, f) {
+    const now = performance.now();
+    if (AN.s == null || AN.route !== n.route) { AN.s = n.s; AN.v = Math.max(0, f.speed || 0); AN.route = n.route; }
+    else {
+      const dt = (now - AN.tFix) / 1000;
+      if (dt > 0.05) { const ve = (n.s - AN.sFix) / dt, gps = typeof f.speed === 'number' && f.speed >= 0 && !f.sim ? f.speed : ve; AN.v = Math.max(0, Math.min(70, AN.v * 0.45 + (0.5 * ve + 0.5 * gps) * 0.55)); }
+    }
+    AN.sFix = n.s; AN.tFix = now; AN.p = null; AN.pFix = null;
+    anKick();
+  }
+  function anFree(f) {
+    AN.s = null; AN.route = null;
+    AN.pFix = (f.show || f.ll).slice(); AN.tFix = performance.now(); AN.vv = f.sim ? 0 : (f.speed || 0);
+    if ((f.speed || 0) > 1.2 && typeof f.heading === 'number') AN.hd = f.heading; else if (AN.hd == null && typeof f.heading === 'number') AN.hd = f.heading;
+    if (!AN.p) AN.p = AN.pFix.slice();
+    anKick();
+  }
+  function anFrame(t) {
+    AN.raf = 0;
+    if (!map || !M.puck) return;
+    const dt = Math.max(0.001, Math.min(0.25, (t - AN.last) / 1000)); AN.last = t;
+    const n = S.nav;
+    let at = null, brg = null, moving = false;
+    if (n && AN.s != null && AN.route === n.route) {
+      const r = n.route, age = Math.min(1.8, (t - AN.tFix) / 1000), pred = Math.min(r.dist, AN.sFix + AN.v * age), err = pred - AN.s;
+      if (Math.abs(err) > 90) AN.s = pred;
+      else { let step = AN.v * dt * (age < 1.8 ? 1 : 0) + err * Math.min(1, dt * 2.2); if (step < 0 && err > -14) step = 0; AN.s = Math.max(0, Math.min(r.dist, AN.s + step)); }
+      moving = (AN.v > 0.25 && age < 1.8) || Math.abs(pred - AN.s) > 0.5;
+      at = G.at(r.geom, r.cum, AN.s).pt; brg = G.at(r.geom, r.cum, Math.min(r.dist, AN.s + 6)).brg;
+    } else if (AN.p && AN.pFix) {
+      const age = Math.min(1.4, (t - AN.tFix) / 1000);
+      const tgt = AN.vv > 1.5 && typeof AN.hd === 'number' ? G.dest(AN.pFix, AN.hd, AN.vv * age) : AN.pFix, d = G.hav(AN.p, tgt);
+      if (d > 200) AN.p = tgt.slice(); else { const k = Math.min(1, dt * 3.5); AN.p = [AN.p[0] + (tgt[0] - AN.p[0]) * k, AN.p[1] + (tgt[1] - AN.p[1]) * k]; }
+      moving = d > 0.35 || (AN.vv > 1.5 && age < 1.4);
+      at = AN.p; brg = typeof AN.hd === 'number' ? AN.hd : null;
+    }
+    if (!at) return;
+    M.puck.setLngLat(at);
+    if (brg != null) { AN.rot = AN.rot == null ? brg : G.smoothAngle(AN.rot, brg, Math.min(1, dt * 7)); M.puck.setRotation(AN.rot); }
+    if (S.follow && !AN.touch && (moving || AN.force)) {
+      if (n) {
+        const v = AN.v, zt = n.zLock || (v > 27 ? 14.9 : v > 16 ? 15.7 : v > 7 ? 16.4 : 17), k = AN.force ? 1 : 0;
+        n.z = n.z == null ? (AN.force ? zt : map.getZoom()) : n.z + (zt - n.z) * Math.min(1, dt * 0.9);
+        n.pitch = n.pitch == null ? map.getPitch() : n.pitch + (50 - n.pitch) * Math.min(1, dt * 2.5);
+        const cb = brg != null ? brg : map.getBearing();
+        n.cam = n.cam == null ? map.getBearing() : G.smoothAngle(n.cam, cb, Math.min(1, dt * (1.8 + k)));
+        const H = mapEl.clientHeight || 600, top = Math.min(H * 0.4, 300), bottom = WIDE.matches ? 40 : Math.min(sheet.offsetHeight + 20, H * 0.42);
+        map.easeTo({ center: at, bearing: n.cam, pitch: n.pitch, zoom: n.z, duration: 0, offset: [0, (top - bottom) / 2], essential: true });
+      } else if (!map.isEasing()) map.easeTo({ center: at, duration: 0, offset: off(), essential: true });
+      AN.force = false;
+    }
+    if (moving || n) AN.raf = requestAnimationFrame(anFrame);
+  }
   function drawPuck() {
     const p = S.pos;
     if (!p) return;
     const at = p.show || p.ll;
     if (!M.puck) M.puck = mk('<i></i>' + ic('nav'), 'puck', { rotationAlignment: 'map', pitchAlignment: 'map' }).setLngLat(at).addTo(map);
-    else M.puck.setLngLat(at);
+    else if (AN.s == null && !AN.p) M.puck.setLngLat(at);
     const el = M.puck.getElement();
     el.classList.toggle('navi', !!S.nav);
     el.classList.toggle('hdg', typeof p.heading === 'number');
-    if (typeof p.heading === 'number') M.puck.setRotation(p.heading);
+    if (typeof p.heading === 'number' && AN.rot == null) M.puck.setRotation(p.heading);
     const wantAcc = !S.nav && !p.sim && p.acc > 30;
     if (wantAcc) setSrc('acc', { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [G.circle(p.ll, Math.min(p.acc, 3000), 48)] } }] });
     else if (SRC.acc !== EMPTY) setSrc('acc', EMPTY);
@@ -1836,6 +1896,8 @@ J.live = (function () {
   /* ---------- position : GPS réel ou trajet simulé ---------- */
   function onFix(f, quiet) {
     const prev = S.pos;
+    if (prev && !f.sim && f.acc > 80 && prev.acc && prev.acc < 40 && f.t - prev.t < 6000) return; // sursaut du GPS : on garde la bonne position
+    if (!f.sim && (f.speed || 0) < 1 && prev && typeof prev.heading === 'number') f.heading = prev.heading; // à l'arrêt, la direction du GPS ne veut rien dire
     if (typeof f.heading !== 'number' || isNaN(f.heading)) f.heading = prev && G.hav(prev.ll, f.ll) > 4 ? G.bearing(prev.ll, f.ll) : (prev && typeof prev.heading === 'number' ? prev.heading : null);
     if (typeof f.speed !== 'number' || isNaN(f.speed)) { const dt = prev ? (f.t - prev.t) / 1000 : 0; f.speed = dt > 0.3 ? Math.min(70, G.hav(prev.ll, f.ll) / dt) : 0; }
     S.pos = f;
@@ -1844,7 +1906,7 @@ J.live = (function () {
     else {
       drawPuck();
       if (!prev && !quiet && S.view === 'home') { S.follow = true; map.flyTo({ center: f.ll, zoom: Math.max(map.getZoom(), 15.3), offset: off(), duration: 1400, essential: true }); }
-      else if (S.follow && !quiet) map.easeTo({ center: f.ll, duration: 700, offset: off(), essential: true });
+      if (prev) anFree(f);
       freeAlerts(f);
     }
     speedo(f);
@@ -2230,6 +2292,7 @@ J.live = (function () {
   function endNav() {
     stopSim(); wake(false);
     if (S.pos) S.pos.speed = 0;
+    anReset();
     S.nav = null; S.limit = null; limitUI();
     routeColors();
     setAlert(null);
@@ -2258,9 +2321,12 @@ J.live = (function () {
     let m = G.nearest(g, r.cum, f.ll, n.seg - 4, n.seg + 45);
     if (m.d > 60) { const m2 = G.nearest(g, r.cum, f.ll, 0, g.length - 2); if (m2.d < m.d - 15) m = m2; }
     const on = f.sim || m.d <= Math.max(45, Math.min(90, (f.acc || 0) * 1.3));
+    // le bruit du GPS ne doit pas faire reculer le repère : un petit retour en arrière est ignoré
+    if (on && !f.sim && m.s < n.s && n.s - m.s < 25) m = { i: n.seg, s: n.s, pt: G.at(g, r.cum, n.s).pt, d: m.d };
     if (on) { n.off = 0; n.seg = m.i; n.s = m.s; f.show = m.pt; f.heading = G.at(g, r.cum, Math.min(r.dist, n.s + 5)).brg; ensureLimits(n); }
     else { f.show = null; if (++n.off >= 3 && Date.now() - n.lastRe > 12000) reroute(f); }
     drawPuck();
+    if (on) anRoute(n, f); else anFree(f);
     let k = n.k;
     while (k + 1 < r.steps.length && r.steps[k + 1].s0 <= n.s + 3) k++;
     const changed = k !== n.k;
@@ -2285,7 +2351,7 @@ J.live = (function () {
     }
     else if (dn <= far && dn > near * 1.7 && !n.said['f' + key]) { n.said['f' + key] = 1; say('Dans ' + F.say(dn) + ', ' + fr.lower(sayText(nx))); }
     else if (changed && cur.len > 1500 && dn > far * 1.5) say('Continuez pendant ' + F.say(dn));
-    navUI(); navCam(f);
+    navUI();
     navAlerts(n.s);
     setGrad(n.s / r.dist);
   }
@@ -2308,16 +2374,7 @@ J.live = (function () {
     const a = $('#nb-eta');
     if (a) { a.textContent = F.clock(new Date(Date.now() + n.tRem * 1000)); $('#nb-rem').textContent = F.dur(n.tRem); $('#nb-dist').textContent = F.dist(n.rem); }
   }
-  function navCam(f, force) {
-    if (!S.follow) return;
-    const n = S.nav, v = f.speed || 0, zt = n.zLock || (v > 27 ? 14.9 : v > 16 ? 15.7 : v > 7 ? 16.4 : 17);
-    n.z = n.z == null ? zt : n.z + (zt - n.z) * 0.12;
-    const brg = typeof f.heading === 'number' ? f.heading : map.getBearing();
-    n.cam = n.cam == null ? brg : G.smoothAngle(n.cam, brg, f.sim ? 0.3 : 0.65);
-    const H = mapEl.clientHeight || 600, wide = WIDE.matches;
-    const top = Math.min(H * 0.4, 300), bottom = wide ? 40 : Math.min(sheet.offsetHeight + 20, H * 0.42);
-    map.easeTo({ center: f.show || f.ll, bearing: n.cam, pitch: 50, zoom: n.z, duration: force ? 600 : f.sim ? 230 : 950, easing: t => t, essential: true, offset: [0, (top - bottom) / 2] });
-  }
+  function navCam(f, force) { if (force && S.nav) { S.nav.cam = null; S.nav.z = null; } AN.force = true; anKick(); }
   function arrive() {
     const n = S.nav;
     S.arrived = { dest: n.dest, dist: n.route.dist, time: n.simulated ? n.route.time : (Date.now() - n.t0) / 1000, travel: n.travel };
@@ -2436,7 +2493,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.4.0.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.4.1.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -2669,7 +2726,7 @@ J.live = (function () {
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
   /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
      Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
-  const BUILD = '1.4.0-mwd8jkjc';
+  const BUILD = '1.4.1-mwd9fx5y';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
     $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;
@@ -2745,12 +2802,16 @@ J.live = (function () {
     map.once('load', first);
     map.on('rotate', northUI); map.on('pitch', northUI); map.on('zoom', zoomClasses);
     ['dragstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) unfollow(); }));
+    // pendant qu'un doigt est sur la carte, elle ne bouge pas toute seule
+    const cv = map.getCanvasContainer();
+    ['touchstart', 'mousedown'].forEach(ev => cv.addEventListener(ev, () => { AN.touch = true; }, { passive: true }));
+    ['touchend', 'touchcancel', 'mouseup', 'mouseleave'].forEach(ev => cv.addEventListener(ev, () => { AN.touch = false; }, { passive: true }));
     map.on('zoomend', e => { if (e.originalEvent && S.nav) S.nav.zLock = map.getZoom(); });
     map.on('click', onMapClick);
     map.on('error', () => { /* tuile ou police manquante : la carte continue */ });
     render();
   }
-  J.app = { S, get map() { return map; }, get db() { return db; }, get D() { return D; }, ACT, go };
+  J.app = { S, get map() { return map; }, get M() { return M; }, get db() { return db; }, get D() { return D; }, ACT, go };
   boot().catch(e => { try { console.error(e); } catch (x) { /* rien */ } if (!map) fail('Lunavia n’a pas pu démarrer. Recharge la page.'); });
 })();
 </script>
