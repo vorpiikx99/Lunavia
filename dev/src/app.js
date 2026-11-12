@@ -140,7 +140,8 @@
     const lay = def => { if (!map.getLayer(def.id)) map.addLayer(def, before && map.getLayer(before) ? before : undefined); };
     const round = { 'line-cap': 'round', 'line-join': 'round' };
     if (S.mode === 'live') {
-      src('sat', { type: 'raster', tiles: [J.live.ORTHO], tileSize: 256, maxzoom: 19 });
+      // écrans très fins (téléphones) : on demande les photos un cran plus détaillées, sinon elles sont étirées et floues
+      src('sat', { type: 'raster', tiles: [J.live.ORTHO], tileSize: (window.devicePixelRatio || 1) >= 1.5 ? 128 : 256, maxzoom: 19 });
       lay({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: S.base === 'sat' ? 'visible' : 'none' } });
     }
     src('acc', { type: 'geojson', data: SRC.acc });

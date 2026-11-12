@@ -1701,7 +1701,8 @@ J.live = (function () {
     const lay = def => { if (!map.getLayer(def.id)) map.addLayer(def, before && map.getLayer(before) ? before : undefined); };
     const round = { 'line-cap': 'round', 'line-join': 'round' };
     if (S.mode === 'live') {
-      src('sat', { type: 'raster', tiles: [J.live.ORTHO], tileSize: 256, maxzoom: 19 });
+      // écrans très fins (téléphones) : on demande les photos un cran plus détaillées, sinon elles sont étirées et floues
+      src('sat', { type: 'raster', tiles: [J.live.ORTHO], tileSize: (window.devicePixelRatio || 1) >= 1.5 ? 128 : 256, maxzoom: 19 });
       lay({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: S.base === 'sat' ? 'visible' : 'none' } });
     }
     src('acc', { type: 'geojson', data: SRC.acc });
@@ -2372,7 +2373,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.1.1.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.1.2.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
