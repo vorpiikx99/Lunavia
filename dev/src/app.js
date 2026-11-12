@@ -176,7 +176,7 @@
       lay({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: S.base === 'sat' ? 'visible' : 'none' } });
     }
     if (S.mode === 'live' && trafficOn()) {
-      src('traffic', { type: 'raster', tiles: ['https://api.tomtom.com/maps/orbis/traffic/flow/raster/tile/{z}/{x}/{y}?apiVersion=2&key=' + encodeURIComponent(db.set.tkey.trim()) + '&style=' + (isDark() ? 'dark' : 'light') + '&tileSize=512'], tileSize: 512, minzoom: 6, maxzoom: 20, attribution: '© TomTom' });
+      src('traffic', { type: 'raster', tiles: ['https://api.tomtom.com/maps/orbis/traffic/flow/raster/tile/{z}/{x}/{y}?apiVersion=2&key=' + encodeURIComponent(tkey()) + '&style=' + (isDark() ? 'dark' : 'light') + '&tileSize=512'], tileSize: 512, minzoom: 6, maxzoom: 20, attribution: '© TomTom' });
       lay({ id: 'traffic', type: 'raster', source: 'traffic', paint: { 'raster-opacity': 0.85 } });
     }
     src('acc', { type: 'geojson', data: SRC.acc });
@@ -995,8 +995,7 @@
     if (db.parked) places += pl('Ma voiture', { name: 'Garée ' + F.ago(db.parked.t) }, 'parked');
     return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') +
       '<h3>Trafic en direct</h3>' + tog('traffic', 'Afficher le trafic sur la carte') +
-      '<label class="keyf" for="set-tkey">Clé TomTom<input id="set-tkey" type="text" data-set="tkey" value="' + esc(s.tkey || '') + '" placeholder="Colle ta clé ici" autocomplete="off" autocapitalize="off" spellcheck="false"></label>' +
-      '<p class="note">' + (S.mode !== 'live' ? 'Le trafic s’affiche sur la vraie carte, pas dans la démo.' : trafficOn() ? 'Trafic actif : vert fluide, orange ralenti, rouge bouchon. La clé reste sur cet appareil.' : 'Le trafic vient de TomTom, avec une clé gratuite (sans carte bancaire). Elle reste sur cet appareil.') + '</p>' +
+      '<p class="note">' + (S.mode !== 'live' ? 'Le trafic s’affiche sur la vraie carte, pas dans la démo.' : 'Vert : fluide. Orange : ralenti. Rouge : bouchon. Données TomTom.') + '</p>' +
       '<h3>Coût du trajet</h3>' +
       '<label class="field" for="set-conso">Consommation<span><input id="set-conso" type="number" inputmode="decimal" step="0.1" min="1" max="30" value="' + s.conso + '" data-set="conso">L/100 km</span></label>' +
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
@@ -1163,7 +1162,7 @@
       else if (t.type === 'number') { const v = parseFloat(String(t.value).replace(',', '.')); if (v >= +t.min && v <= +t.max) db.set[k] = v; else t.value = db.set[k]; }
       else db.set[k] = t.value;
       save();
-      if (k === 'tkey' || k === 'traffic') { setBase(); attrib(); if (k === 'tkey') toast(trafficOn() ? 'Trafic activé' : db.set.tkey ? 'Cette clé n’a pas la bonne forme.' : 'Trafic désactivé'); }
+      if (k === 'traffic') { setBase(); attrib(); toast(db.set.traffic ? 'Trafic affiché' : 'Trafic masqué'); }
     });
     $('#searchbar').addEventListener('submit', e => e.preventDefault());
     input.addEventListener('focus', () => { if (S.view !== 'search') { S.prev = S.view; go('search'); } });
@@ -1269,7 +1268,11 @@
     if (left > 0) await new Promise(r => setTimeout(r, left));
   }
   function hideSplash() { const sp = $('#splash'); if (!sp || sp.hidden) return; sp.classList.add('out'); setTimeout(() => { sp.hidden = true; }, 320); }
-  const trafficOn = () => !!(db && db.set.traffic && /^[A-Za-z0-9]{20,60}$/.test(String(db.set.tkey || '').trim()));
+  // Trafic TomTom : la clé de l'appli, valable pour tous les téléphones (verrouillée côté TomTom sur l'adresse du site).
+  // Une clé collée dans les réglages d'un appareil, si elle existe encore, passe devant.
+  const TKEY = 'rHBuepoZuWML68zrSZKED9Sh2fJWoecv';
+  const tkey = () => { const k = String((db && db.set.tkey) || '').trim(); return /^[A-Za-z0-9]{20,60}$/.test(k) ? k : TKEY; };
+  const trafficOn = () => !!(db && db.set.traffic && tkey());
   function themeUI() { const b = $('#theme'); if (b) { b.classList.toggle('on', isDark()); b.setAttribute('aria-pressed', isDark()); } }
   async function boot() {
     const upd = checkUpdate().catch(() => {});

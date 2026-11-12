@@ -12,10 +12,12 @@ const dire = async ph => { await page.click('#sb-mic'); await sleep(200); await 
 
 check('le micro est proposé dans la barre de recherche', await page.evaluate(() => !document.querySelector('#sb-mic').hidden));
 // trafic : sans clé rien, avec clé la couche est posée
-check('sans clé : pas de couche de trafic', await page.evaluate(() => !J.app.map.getLayer('traffic')));
-await page.click('#sb-set'); await page.waitForSelector('#set-tkey'); await page.fill('#set-tkey', 'AbCdEfGhIjKlMnOpQrStUvWxYz012345'); await page.dispatchEvent('#set-tkey', 'change'); await sleep(2500); await idle(page);
 const tr = await page.evaluate(() => { const s = J.app.map.getSource('traffic'); return { couche: !!J.app.map.getLayer('traffic'), url: s ? s.tiles[0] : '', mention: document.querySelector('#attrib').textContent }; });
-check('avec une clé : la couche de trafic est posée, avec la mention TomTom', tr.couche && /orbis\/traffic\/flow\/raster\/tile\/\{z\}\/\{x\}\/\{y\}\?apiVersion=2&key=AbCd.*style=light&tileSize=512/.test(tr.url) && /TomTom/.test(tr.mention), tr.url.slice(0, 110));
+check('le trafic est affiché d’office, avec la mention TomTom', tr.couche && /orbis\/traffic\/flow\/raster\/tile\/\{z\}\/\{x\}\/\{y\}\?apiVersion=2&key=[A-Za-z0-9]{32}&style=light&tileSize=512/.test(tr.url) && /TomTom/.test(tr.mention));
+await page.click('#sb-set'); await page.waitForSelector('#set-traffic'); await page.click('label[for="set-traffic"]'); await sleep(2500); await idle(page);
+check('réglage coupé : la couche disparaît', await page.evaluate(() => !J.app.map.getLayer('traffic')));
+await page.click('label[for="set-traffic"]'); await sleep(2500); await idle(page);
+check('réglage rallumé : la couche revient', await page.evaluate(() => !!J.app.map.getLayer('traffic')));
 await snap('Réglages : trafic');
 await page.evaluate(() => J.app.go('home')); await sleep(300);
 // commande vocale : destination
