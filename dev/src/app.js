@@ -723,8 +723,11 @@
     let any = false;
     res.forEach((x, i) => { if (x.status === 'fulfilled' && x.value) { setTraffic(todo[i], x.value); any = true; } });
     if (!any) return;
+    // le plus rapide avec le trafic passe en tête de liste ; si un trajet a déjà été choisi à la main, il reste choisi
+    const chosen = S.routes[S.sel];
+    S.routes.sort((x, y) => x.time - y.time);
+    S.sel = S.altPicked ? Math.max(0, S.routes.indexOf(chosen)) : 0;
     labelRoutes();
-    if (!S.altPicked) { let best = 0; S.routes.forEach((r, i) => { if (r.time < S.routes[best].time - 30) best = i; }); S.sel = best; }
     if (S.view === 'route') { render(); wxUI(); drawRoutes(false); }
   }
   // pendant le guidage : l'heure d'arrivée est recalée sur le trafic toutes les quatre minutes

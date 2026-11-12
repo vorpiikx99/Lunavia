@@ -25,7 +25,7 @@ await plan('52.0700, 5.0600'); let b = await R();
 await flags({ ttDelay: 900, ttJamLen: b.r[0].d });
 await plan('52.0700, 5.0600'); b = await R();
 const jb = b.r.findIndex(r => r.delay === 900);
-check('trois trajets, bouchon sur le premier : un autre est choisi d’office', b.r.length === 3 && jb >= 0 && b.sel !== jb && b.r[b.sel].t === Math.min(...b.r.map(r => r.t)) && b.r[b.sel].tag === 'Le plus rapide', 'choisi ' + b.sel + ' · durées ' + b.r.map(r => r.t).join(' / ') + ' · bouchon sur ' + jb);
+check('trois trajets, bouchon sur le premier : un autre est choisi d’office', b.r.length === 3 && jb === 2 && b.sel === 0 && b.r[0].t === Math.min(...b.r.map(r => r.t)) && b.r[0].tag === 'Le plus rapide', 'choisi ' + b.sel + ' · durées ' + b.r.map(r => r.t).join(' / ') + ' · bouchon sur ' + jb);
 await page.screenshot({ path: 'test/out/trafic-trajets.png' });
 // 3. tracé reconstitué trop différent : on n'en tient pas compte
 await flags({ ttDelay: 0, ttJamLen: 0, ttWrong: 1 });
