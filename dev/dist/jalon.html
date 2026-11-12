@@ -57,10 +57,11 @@ h2,h3,p{margin:0}
 #map .fail .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 
 /* ---------- écran d'ouverture : chargement et recherche de mise à jour ---------- */
-#splash{position:fixed;inset:0;z-index:60;background:var(--blue);color:var(--on-blue);display:grid;place-items:center;transition:opacity .3s}
+#splash{position:fixed;inset:0;z-index:60;background:#0B0420;color:#fff;display:grid;place-items:center;transition:opacity .3s}
 #splash.out{opacity:0;pointer-events:none}
 .sp-in{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px}
-#sp-logo svg{width:72px;height:72px;background:#fff;border-radius:20px;padding:10px;box-sizing:border-box}
+#sp-logo svg{width:84px;height:84px}
+#sp-logo img{display:block;border-radius:26px;box-shadow:0 0 34px rgba(197,107,255,.55)}
 .sp-in b{font:700 34px/1 var(--cond);letter-spacing:.06em;text-transform:uppercase}
 #sp-msg{font-size:15px;opacity:.9;min-height:1.4em}
 .sp-bar{display:block;width:140px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);overflow:hidden;position:relative}
@@ -714,7 +715,7 @@ J.signs = (function () {
 })();
 
 /* le jalon : piquet d'arpenteur rouge et blanc, utilisé pour le logo et le repère de destination */
-J.logo = '<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10.500h4v3.600h-4z" fill="#fff"/><path d="M10 14.100h4v3.600h-4z" fill="#C1121C"/><path d="M10 17.700h4l-2 4.800z" fill="#fff"/><path d="M10 10.500h4v7.200l-2 4.800-2-4.800z" fill="none" stroke="#151A21" stroke-width=".9" stroke-linejoin="round"/><circle cx="12" cy="6.300" r="4.900" fill="#C1121C" stroke="#fff" stroke-width="1.200"/><circle cx="12" cy="6.300" r="1.700" fill="#fff"/></svg>';
+J.logo = '<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="6" fill="#16093A" stroke="#F2B544" stroke-width="1.3"/><path d="M12 5.200l6 13.200-6-3.300-6 3.300z" fill="#fff" stroke="#C56BFF" stroke-width="1.1" stroke-linejoin="round"/></svg>';
 J.pin = '<svg class="jpin" viewBox="0 0 30 50" width="30" height="50" aria-hidden="true"><ellipse cx="15" cy="48" rx="6" ry="1.800" fill="rgba(0,0,0,.28)"/><path d="M12.400 21h5.200v7h-5.200z" fill="#fff"/><path d="M12.400 28h5.200v7h-5.200z" fill="#C1121C"/><path d="M12.400 35h5.200v6L15 47.500 12.400 41z" fill="#fff"/><path d="M12.400 21h5.200v20L15 47.500 12.400 41z" fill="none" stroke="#151A21" stroke-width="1"/><circle cx="15" cy="12" r="10.500" fill="#C1121C" stroke="#fff" stroke-width="2.400"/><circle cx="15" cy="12" r="3.600" fill="#fff"/></svg>';
 
 /* flèche de manœuvre dessinée d'après l'angle du virage */
@@ -2394,7 +2395,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.3.0.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.3.1.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -2625,10 +2626,10 @@ J.live = (function () {
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
   /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
      Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
-  const BUILD = '1.3.0-mwd7cygk';
+  const BUILD = '1.3.1-mwd81ydb';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
-    $('#sp-logo').innerHTML = J.logo;
+    $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;
     if (hosted && navigator.onLine !== false) {
       msg.textContent = 'Recherche d’une mise à jour…';
       try {

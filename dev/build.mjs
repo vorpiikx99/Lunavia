@@ -52,7 +52,6 @@ const head = [
   '<meta name="apple-mobile-web-app-title" content="Lunavia">',
   '<meta name="apple-mobile-web-app-status-bar-style" content="default">',
   '<link rel="manifest" href="manifest.webmanifest">',
-  '<link rel="icon" href="icons/icon.svg" type="image/svg+xml">',
   '<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">',
   '<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">',
   '<link rel="preconnect" href="https://fonts.googleapis.com">',

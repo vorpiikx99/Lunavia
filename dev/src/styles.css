@@ -52,10 +52,11 @@ h2,h3,p{margin:0}
 #map .fail .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 
 /* ---------- écran d'ouverture : chargement et recherche de mise à jour ---------- */
-#splash{position:fixed;inset:0;z-index:60;background:var(--blue);color:var(--on-blue);display:grid;place-items:center;transition:opacity .3s}
+#splash{position:fixed;inset:0;z-index:60;background:#0B0420;color:#fff;display:grid;place-items:center;transition:opacity .3s}
 #splash.out{opacity:0;pointer-events:none}
 .sp-in{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px}
-#sp-logo svg{width:72px;height:72px;background:#fff;border-radius:20px;padding:10px;box-sizing:border-box}
+#sp-logo svg{width:84px;height:84px}
+#sp-logo img{display:block;border-radius:26px;box-shadow:0 0 34px rgba(197,107,255,.55)}
 .sp-in b{font:700 34px/1 var(--cond);letter-spacing:.06em;text-transform:uppercase}
 #sp-msg{font-size:15px;opacity:.9;min-height:1.4em}
 .sp-bar{display:block;width:140px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);overflow:hidden;position:relative}

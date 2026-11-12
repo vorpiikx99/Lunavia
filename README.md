@@ -30,4 +30,4 @@ l'atelier (code source, montage, essais) dans `dev/`, voir `dev/LISEZ-MOI.md`.
 Lunavia garde ses lieux sur l'appareil sous la clé `jalon.v1`, et ses réserves hors ligne s'appellent `jalon-…`
 (l'ancien nom de l'appli, conservé pour ne pas perdre les données déjà enregistrées).
 
-Version 1.3.0-mwd7cygk
+Version 1.3.1-mwd81ydb

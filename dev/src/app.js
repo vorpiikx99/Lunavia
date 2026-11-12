@@ -1047,7 +1047,7 @@
   const BUILD = '__BUILD__';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
-    $('#sp-logo').innerHTML = J.logo;
+    $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;
     if (hosted && navigator.onLine !== false) {
       msg.textContent = 'Recherche d’une mise à jour…';
       try {

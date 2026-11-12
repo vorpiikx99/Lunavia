@@ -62,7 +62,7 @@ J.signs = (function () {
 })();
 
 /* le jalon : piquet d'arpenteur rouge et blanc, utilisé pour le logo et le repère de destination */
-J.logo = '<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10.500h4v3.600h-4z" fill="#fff"/><path d="M10 14.100h4v3.600h-4z" fill="#C1121C"/><path d="M10 17.700h4l-2 4.800z" fill="#fff"/><path d="M10 10.500h4v7.200l-2 4.800-2-4.800z" fill="none" stroke="#151A21" stroke-width=".9" stroke-linejoin="round"/><circle cx="12" cy="6.300" r="4.900" fill="#C1121C" stroke="#fff" stroke-width="1.200"/><circle cx="12" cy="6.300" r="1.700" fill="#fff"/></svg>';
+J.logo = '<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="6" fill="#16093A" stroke="#F2B544" stroke-width="1.3"/><path d="M12 5.200l6 13.200-6-3.300-6 3.300z" fill="#fff" stroke="#C56BFF" stroke-width="1.1" stroke-linejoin="round"/></svg>';
 J.pin = '<svg class="jpin" viewBox="0 0 30 50" width="30" height="50" aria-hidden="true"><ellipse cx="15" cy="48" rx="6" ry="1.800" fill="rgba(0,0,0,.28)"/><path d="M12.400 21h5.200v7h-5.200z" fill="#fff"/><path d="M12.400 28h5.200v7h-5.200z" fill="#C1121C"/><path d="M12.400 35h5.200v6L15 47.500 12.400 41z" fill="#fff"/><path d="M12.400 21h5.200v20L15 47.500 12.400 41z" fill="none" stroke="#151A21" stroke-width="1"/><circle cx="15" cy="12" r="10.500" fill="#C1121C" stroke="#fff" stroke-width="2.400"/><circle cx="15" cy="12" r="3.600" fill="#fff"/></svg>';
 
 /* flèche de manœuvre dessinée d'après l'angle du virage */
