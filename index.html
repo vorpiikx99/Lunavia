@@ -29,6 +29,7 @@
   --shadow:0 6px 22px rgba(21,26,33,.2); --shadow-s:0 2px 8px rgba(21,26,33,.18);
   --font:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --cond:"Barlow Condensed","Arial Narrow","Roboto Condensed",sans-serif;
+  --nav-ink:#4A2FD0;
   --gl:max(16px, env(safe-area-inset-left, 0px)); --gr:max(16px, env(safe-area-inset-right, 0px));
 }
 @media (prefers-color-scheme: dark){
@@ -36,7 +37,7 @@
     --bg:#1B1D22; --surface:#25282E; --surface-2:#31353D; --ink:#ECEEF1; --muted:#A9AEB8; --line:#3D414A;
     --blue:#1F5FBF; --on-blue:#FFFFFF; --link:#7DB6F9; --blue-soft:#1F3352;
     --yellow:#F7B500; --on-yellow:#15130B;
-    --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7;
+    --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7; --nav-ink:#E6DEFF;
     --map-ink:#E7EBEF; --map-ink2:#AEB6C0; --map-halo:#11161A; --map-green:#8CBB8F; --map-water:#84BAE2;
     --shadow:0 6px 22px rgba(0,0,0,.55); --shadow-s:0 2px 8px rgba(0,0,0,.5);
     color-scheme:dark;
@@ -46,7 +47,7 @@
   --bg:#1B1D22; --surface:#25282E; --surface-2:#31353D; --ink:#ECEEF1; --muted:#A9AEB8; --line:#3D414A;
   --blue:#1F5FBF; --on-blue:#FFFFFF; --link:#7DB6F9; --blue-soft:#1F3352;
   --yellow:#F7B500; --on-yellow:#15130B;
-  --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7;
+  --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7; --nav-ink:#E6DEFF;
   --map-ink:#E7EBEF; --map-ink2:#AEB6C0; --map-halo:#11161A; --map-green:#8CBB8F; --map-water:#84BAE2;
   --shadow:0 6px 22px rgba(0,0,0,.55); --shadow-s:0 2px 8px rgba(0,0,0,.5);
   color-scheme:dark;
@@ -140,6 +141,11 @@ h2,h3,p{margin:0}
 .al-b{grid-column:1/-1;display:flex;gap:8px}
 .al-b button{flex:1;min-height:38px;border:2px solid var(--on-yellow);border-radius:8px;font-weight:700;text-align:center}
 
+/* guidage lancé : panneau, compteur et heure d'arrivée en violet lumineux, sans lueur autour */
+.navon #navsign,.navon #ns-then{background:#7D5BFF}
+.navon #navsign .in{border-color:#fff}
+.navon #speedo{border-color:#C9B8FF;border-width:3px}
+.navon .navbar b{color:var(--nav-ink)}
 /* ---------- boutons flottants, compteur, mentions ---------- */
 #side{position:fixed;z-index:6;right:max(16px, env(safe-area-inset-right, 0px));bottom:calc(var(--sheet-h, 0px) + 14px);display:flex;flex-direction:column;gap:10px}
 .fab{width:48px;height:48px;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);display:grid;place-items:center}
@@ -359,6 +365,11 @@ a.btn{text-decoration:none}
   #app:not(.navon) #attrib{top:auto;bottom:4px;right:calc(max(16px, env(safe-area-inset-right, 0px)) + 56px)}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* signalement : commentaire facultatif */
+.repnote-f{display:grid;gap:5px;font-size:13.5px;font-weight:600;color:var(--muted);margin:4px 0 6px}
+.repnote-f input{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);font:500 16px var(--font);padding:0 12px;box-sizing:border-box;width:100%}
+.repnote{font-size:16px;font-weight:600;margin:6px 0 2px;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -1714,7 +1725,15 @@ J.live = (function () {
   function off() { const p = pad(); return [(p.left - p.right) / 2, (p.top - p.bottom) / 2]; }
 
   /* ---------- carte : fond, calques de l'itinéraire, repères ---------- */
-  const COL = () => (isDark() ? { line: '#4C9AF7', casing: '#0B2748', done: '#56616F', alt: '#5F7EA6', altc: '#27384F' } : { line: '#1E6FD9', casing: '#0B3D78', done: '#93A1B3', alt: '#A9C2E3', altc: '#6F8FBA' });
+  // une fois le guidage lancé, le trajet passe en violet lumineux (sans halo : rien ne dépasse de la route)
+  const COL = () => { const d = isDark(), c = d ? { line: '#4C9AF7', casing: '#0B2748', done: '#56616F', alt: '#5F7EA6', altc: '#27384F' } : { line: '#1E6FD9', casing: '#0B3D78', done: '#93A1B3', alt: '#A9C2E3', altc: '#6F8FBA' }; if (S.nav) { c.line = d ? '#B7A0FF' : '#7D5BFF'; c.casing = d ? '#6E4CFF' : '#3F23C4'; } return c; };
+  const CLEAR = 'rgba(255,255,255,0)';
+  const coreGrad = f => ['step', ['line-progress'], CLEAR, Math.max(0, Math.min(0.9999, f || 0)), S.nav ? 'rgba(255,255,255,.85)' : CLEAR];
+  function routeColors() {
+    if (!map || !map.getLayer('route')) return;
+    const f = S.nav ? S.nav.s / S.nav.route.dist : 0;
+    try { map.setPaintProperty('route-case', 'line-color', COL().casing); map.setPaintProperty('route', 'line-gradient', grad(f)); if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f)); } catch (e) { /* style en cours de changement */ }
+  }
   const LW = x => ['interpolate', ['linear'], ['zoom'], 6, 3 + x * 0.5, 12, 5 + x * 0.8, 16, 8 + x, 19, 15 + x];
   const grad = f => ['step', ['line-progress'], COL().done, Math.max(0, Math.min(0.9999, f || 0)), COL().line];
   const line = (geom, props) => ({ type: 'Feature', properties: props || {}, geometry: { type: 'LineString', coordinates: geom } });
@@ -1725,6 +1744,7 @@ J.live = (function () {
     if (!now && t - gradT < 450) return;
     gradT = t;
     if (map.getLayer('route')) map.setPaintProperty('route', 'line-gradient', grad(f));
+    if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f));
   }
   function anchor() {
     if (S.mode !== 'live') return undefined;
@@ -1753,6 +1773,7 @@ J.live = (function () {
     src('route', { type: 'geojson', data: SRC.route, lineMetrics: true });
     lay({ id: 'route-case', type: 'line', source: 'route', layout: round, paint: { 'line-color': c.casing, 'line-width': LW(3.4) } });
     lay({ id: 'route', type: 'line', source: 'route', layout: round, paint: { 'line-width': LW(0), 'line-gradient': grad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
+    lay({ id: 'route-core', type: 'line', source: 'route', layout: round, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.1, 17, 3], 'line-gradient': coreGrad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
   }
   async function setBase() {
     if (!map) return;
@@ -1946,7 +1967,7 @@ J.live = (function () {
     const el = $('#alert');
     if (!x) { if (!el.hidden) el.hidden = true; S.alertRp = null; return; }
     if (S.alertRp !== x.rp) { S.alertRp = x.rp; $('#al-ic').innerHTML = J.signs[x.rp.type]; $('#al-title').textContent = REPORTS[x.rp.type].label; }
-    $('#al-sub').textContent = (x.d > 15 ? 'à ' + F.dist(x.d) : 'ici') + ' · ' + F.ago(x.rp.t);
+    $('#al-sub').textContent = (x.d > 15 ? 'à ' + F.dist(x.d) : 'ici') + ' · ' + F.ago(x.rp.t) + (x.rp.note ? ' · « ' + x.rp.note + ' »' : '');
     el.hidden = false;
   }
   function indexReports() {
@@ -1959,7 +1980,7 @@ J.live = (function () {
     let show = null;
     for (const x of n.reps) {
       const d = x.s - s;
-      if (d > 0 && d <= 600 && !n.alerted[x.rp.id]) { n.alerted[x.rp.id] = 1; say(REPORTS[x.rp.type].said + ' à ' + F.say(d)); }
+      if (d > 0 && d <= 600 && !n.alerted[x.rp.id]) { n.alerted[x.rp.id] = 1; say(REPORTS[x.rp.type].said + ' à ' + F.say(d) + (x.rp.note ? '. ' + x.rp.note : '')); }
       if (d > -40 && d <= 600 && n.alerted[x.rp.id] === 1 && (!show || d < show.d)) show = { rp: x.rp, d: Math.max(0, d) };
     }
     setAlert(show);
@@ -1970,7 +1991,7 @@ J.live = (function () {
     for (const rp of activeReports()) {
       const d = G.hav(f.ll, rp.ll);
       if (d > 450 || Math.abs(G.angDiff(f.heading, G.bearing(f.ll, rp.ll))) > 50) continue;
-      if (!S.freeAlerted[rp.id]) { S.freeAlerted[rp.id] = 1; say(REPORTS[rp.type].said + ' à ' + F.say(d)); }
+      if (!S.freeAlerted[rp.id]) { S.freeAlerted[rp.id] = 1; say(REPORTS[rp.type].said + ' à ' + F.say(d) + (rp.note ? '. ' + rp.note : '')); }
       if (S.freeAlerted[rp.id] === 1 && (!show || d < show.d)) show = { rp, d };
     }
     setAlert(show);
@@ -2199,6 +2220,7 @@ J.live = (function () {
     S.follow = true;
     if (sim) startSim(r); // avant l'affichage : la barre « Trajet simulé » en dépend
     go('nav');
+    routeColors();
     wake(true);
     const first = r.steps[0], nx = r.steps[1];
     say('C’est parti. ' + sayText(first) + (nx && nx.s0 > 60 && nx.type !== 'arrive' ? '. Puis, dans ' + F.say(nx.s0) + ', ' + fr.lower(sayText(nx)) : ''), true);
@@ -2209,6 +2231,7 @@ J.live = (function () {
     stopSim(); wake(false);
     if (S.pos) S.pos.speed = 0;
     S.nav = null; S.limit = null; limitUI();
+    routeColors();
     setAlert(null);
     $('#navsign').hidden = true; $('#ns-then').hidden = true; $('#lanes').hidden = true; $('#speed').hidden = true;
     drawPuck();
@@ -2393,11 +2416,11 @@ J.live = (function () {
     return h;
   }
   function vReport() {
-    return head('Que se passe-t-il ?', S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + '<div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
+    return head('Que se passe-t-il ?', S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + '<label class="repnote-f" for="rep-note">Commentaire (facultatif)<input id="rep-note" type="text" maxlength="80" enterkeyhint="done" autocomplete="off" placeholder="Ex. : voie de droite, gros trou…"></label><p class="note">Écris ton commentaire si tu veux, puis touche le type de signalement.</p><div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
   }
   function vRep() {
     const rp = S.rep;
-    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : '')) + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
+    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
   }
   function vSettings() {
     const s = db.set, tog = (k, label) => '<label class="tog" for="set-' + k + '"><input type="checkbox" id="set-' + k + '" data-set="' + k + '"' + (s[k] ? ' checked' : '') + '>' + label + '</label>';
@@ -2413,7 +2436,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.3.1.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.4.0.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -2512,6 +2535,8 @@ J.live = (function () {
     rep(el) {
       const type = el.dataset.k, p = S.pos ? (S.pos.show || S.pos.ll) : center();
       const rp = { id: 'r' + Date.now().toString(36), type, ll: [+p[0].toFixed(6), +p[1].toFixed(6)], t: Date.now() };
+      const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      if (note) rp.note = note;
       db.reports.push(rp); save(); drawReports();
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
@@ -2644,7 +2669,7 @@ J.live = (function () {
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
   /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
      Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
-  const BUILD = '1.3.1-mwd81ydb';
+  const BUILD = '1.4.0-mwd8jkjc';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
     $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;

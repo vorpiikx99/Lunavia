@@ -8,6 +8,7 @@
   --shadow:0 6px 22px rgba(21,26,33,.2); --shadow-s:0 2px 8px rgba(21,26,33,.18);
   --font:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --cond:"Barlow Condensed","Arial Narrow","Roboto Condensed",sans-serif;
+  --nav-ink:#4A2FD0;
   --gl:max(16px, env(safe-area-inset-left, 0px)); --gr:max(16px, env(safe-area-inset-right, 0px));
 }
 @media (prefers-color-scheme: dark){
@@ -15,7 +16,7 @@
     --bg:#1B1D22; --surface:#25282E; --surface-2:#31353D; --ink:#ECEEF1; --muted:#A9AEB8; --line:#3D414A;
     --blue:#1F5FBF; --on-blue:#FFFFFF; --link:#7DB6F9; --blue-soft:#1F3352;
     --yellow:#F7B500; --on-yellow:#15130B;
-    --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7;
+    --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7; --nav-ink:#E6DEFF;
     --map-ink:#E7EBEF; --map-ink2:#AEB6C0; --map-halo:#11161A; --map-green:#8CBB8F; --map-water:#84BAE2;
     --shadow:0 6px 22px rgba(0,0,0,.55); --shadow-s:0 2px 8px rgba(0,0,0,.5);
     color-scheme:dark;
@@ -25,7 +26,7 @@
   --bg:#1B1D22; --surface:#25282E; --surface-2:#31353D; --ink:#ECEEF1; --muted:#A9AEB8; --line:#3D414A;
   --blue:#1F5FBF; --on-blue:#FFFFFF; --link:#7DB6F9; --blue-soft:#1F3352;
   --yellow:#F7B500; --on-yellow:#15130B;
-  --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7;
+  --red:#E0434A; --green:#43A566; --asphalt:#111316; --puck:#4C9AF7; --nav-ink:#E6DEFF;
   --map-ink:#E7EBEF; --map-ink2:#AEB6C0; --map-halo:#11161A; --map-green:#8CBB8F; --map-water:#84BAE2;
   --shadow:0 6px 22px rgba(0,0,0,.55); --shadow-s:0 2px 8px rgba(0,0,0,.5);
   color-scheme:dark;
@@ -119,6 +120,11 @@ h2,h3,p{margin:0}
 .al-b{grid-column:1/-1;display:flex;gap:8px}
 .al-b button{flex:1;min-height:38px;border:2px solid var(--on-yellow);border-radius:8px;font-weight:700;text-align:center}
 
+/* guidage lancé : panneau, compteur et heure d'arrivée en violet lumineux, sans lueur autour */
+.navon #navsign,.navon #ns-then{background:#7D5BFF}
+.navon #navsign .in{border-color:#fff}
+.navon #speedo{border-color:#C9B8FF;border-width:3px}
+.navon .navbar b{color:var(--nav-ink)}
 /* ---------- boutons flottants, compteur, mentions ---------- */
 #side{position:fixed;z-index:6;right:max(16px, env(safe-area-inset-right, 0px));bottom:calc(var(--sheet-h, 0px) + 14px);display:flex;flex-direction:column;gap:10px}
 .fab{width:48px;height:48px;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);display:grid;place-items:center}
@@ -338,3 +344,8 @@ a.btn{text-decoration:none}
   #app:not(.navon) #attrib{top:auto;bottom:4px;right:calc(max(16px, env(safe-area-inset-right, 0px)) + 56px)}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* signalement : commentaire facultatif */
+.repnote-f{display:grid;gap:5px;font-size:13.5px;font-weight:600;color:var(--muted);margin:4px 0 6px}
+.repnote-f input{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);font:500 16px var(--font);padding:0 12px;box-sizing:border-box;width:100%}
+.repnote{font-size:16px;font-weight:600;margin:6px 0 2px;overflow-wrap:anywhere}

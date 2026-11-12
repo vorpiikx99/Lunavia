@@ -114,7 +114,15 @@
   function off() { const p = pad(); return [(p.left - p.right) / 2, (p.top - p.bottom) / 2]; }
 
   /* ---------- carte : fond, calques de l'itinéraire, repères ---------- */
-  const COL = () => (isDark() ? { line: '#4C9AF7', casing: '#0B2748', done: '#56616F', alt: '#5F7EA6', altc: '#27384F' } : { line: '#1E6FD9', casing: '#0B3D78', done: '#93A1B3', alt: '#A9C2E3', altc: '#6F8FBA' });
+  // une fois le guidage lancé, le trajet passe en violet lumineux (sans halo : rien ne dépasse de la route)
+  const COL = () => { const d = isDark(), c = d ? { line: '#4C9AF7', casing: '#0B2748', done: '#56616F', alt: '#5F7EA6', altc: '#27384F' } : { line: '#1E6FD9', casing: '#0B3D78', done: '#93A1B3', alt: '#A9C2E3', altc: '#6F8FBA' }; if (S.nav) { c.line = d ? '#B7A0FF' : '#7D5BFF'; c.casing = d ? '#6E4CFF' : '#3F23C4'; } return c; };
+  const CLEAR = 'rgba(255,255,255,0)';
+  const coreGrad = f => ['step', ['line-progress'], CLEAR, Math.max(0, Math.min(0.9999, f || 0)), S.nav ? 'rgba(255,255,255,.85)' : CLEAR];
+  function routeColors() {
+    if (!map || !map.getLayer('route')) return;
+    const f = S.nav ? S.nav.s / S.nav.route.dist : 0;
+    try { map.setPaintProperty('route-case', 'line-color', COL().casing); map.setPaintProperty('route', 'line-gradient', grad(f)); if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f)); } catch (e) { /* style en cours de changement */ }
+  }
   const LW = x => ['interpolate', ['linear'], ['zoom'], 6, 3 + x * 0.5, 12, 5 + x * 0.8, 16, 8 + x, 19, 15 + x];
   const grad = f => ['step', ['line-progress'], COL().done, Math.max(0, Math.min(0.9999, f || 0)), COL().line];
   const line = (geom, props) => ({ type: 'Feature', properties: props || {}, geometry: { type: 'LineString', coordinates: geom } });
@@ -125,6 +133,7 @@
     if (!now && t - gradT < 450) return;
     gradT = t;
     if (map.getLayer('route')) map.setPaintProperty('route', 'line-gradient', grad(f));
+    if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f));
   }
   function anchor() {
     if (S.mode !== 'live') return undefined;
@@ -153,6 +162,7 @@
     src('route', { type: 'geojson', data: SRC.route, lineMetrics: true });
     lay({ id: 'route-case', type: 'line', source: 'route', layout: round, paint: { 'line-color': c.casing, 'line-width': LW(3.4) } });
     lay({ id: 'route', type: 'line', source: 'route', layout: round, paint: { 'line-width': LW(0), 'line-gradient': grad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
+    lay({ id: 'route-core', type: 'line', source: 'route', layout: round, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.1, 17, 3], 'line-gradient': coreGrad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
   }
   async function setBase() {
     if (!map) return;
@@ -346,7 +356,7 @@
     const el = $('#alert');
     if (!x) { if (!el.hidden) el.hidden = true; S.alertRp = null; return; }
     if (S.alertRp !== x.rp) { S.alertRp = x.rp; $('#al-ic').innerHTML = J.signs[x.rp.type]; $('#al-title').textContent = REPORTS[x.rp.type].label; }
-    $('#al-sub').textContent = (x.d > 15 ? 'à ' + F.dist(x.d) : 'ici') + ' · ' + F.ago(x.rp.t);
+    $('#al-sub').textContent = (x.d > 15 ? 'à ' + F.dist(x.d) : 'ici') + ' · ' + F.ago(x.rp.t) + (x.rp.note ? ' · « ' + x.rp.note + ' »' : '');
     el.hidden = false;
   }
   function indexReports() {
@@ -359,7 +369,7 @@
     let show = null;
     for (const x of n.reps) {
       const d = x.s - s;
-      if (d > 0 && d <= 600 && !n.alerted[x.rp.id]) { n.alerted[x.rp.id] = 1; say(REPORTS[x.rp.type].said + ' à ' + F.say(d)); }
+      if (d > 0 && d <= 600 && !n.alerted[x.rp.id]) { n.alerted[x.rp.id] = 1; say(REPORTS[x.rp.type].said + ' à ' + F.say(d) + (x.rp.note ? '. ' + x.rp.note : '')); }
       if (d > -40 && d <= 600 && n.alerted[x.rp.id] === 1 && (!show || d < show.d)) show = { rp: x.rp, d: Math.max(0, d) };
     }
     setAlert(show);
@@ -370,7 +380,7 @@
     for (const rp of activeReports()) {
       const d = G.hav(f.ll, rp.ll);
       if (d > 450 || Math.abs(G.angDiff(f.heading, G.bearing(f.ll, rp.ll))) > 50) continue;
-      if (!S.freeAlerted[rp.id]) { S.freeAlerted[rp.id] = 1; say(REPORTS[rp.type].said + ' à ' + F.say(d)); }
+      if (!S.freeAlerted[rp.id]) { S.freeAlerted[rp.id] = 1; say(REPORTS[rp.type].said + ' à ' + F.say(d) + (rp.note ? '. ' + rp.note : '')); }
       if (S.freeAlerted[rp.id] === 1 && (!show || d < show.d)) show = { rp, d };
     }
     setAlert(show);
@@ -599,6 +609,7 @@
     S.follow = true;
     if (sim) startSim(r); // avant l'affichage : la barre « Trajet simulé » en dépend
     go('nav');
+    routeColors();
     wake(true);
     const first = r.steps[0], nx = r.steps[1];
     say('C’est parti. ' + sayText(first) + (nx && nx.s0 > 60 && nx.type !== 'arrive' ? '. Puis, dans ' + F.say(nx.s0) + ', ' + fr.lower(sayText(nx)) : ''), true);
@@ -609,6 +620,7 @@
     stopSim(); wake(false);
     if (S.pos) S.pos.speed = 0;
     S.nav = null; S.limit = null; limitUI();
+    routeColors();
     setAlert(null);
     $('#navsign').hidden = true; $('#ns-then').hidden = true; $('#lanes').hidden = true; $('#speed').hidden = true;
     drawPuck();
@@ -793,11 +805,11 @@
     return h;
   }
   function vReport() {
-    return head('Que se passe-t-il ?', S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + '<div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
+    return head('Que se passe-t-il ?', S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + '<label class="repnote-f" for="rep-note">Commentaire (facultatif)<input id="rep-note" type="text" maxlength="80" enterkeyhint="done" autocomplete="off" placeholder="Ex. : voie de droite, gros trou…"></label><p class="note">Écris ton commentaire si tu veux, puis touche le type de signalement.</p><div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
   }
   function vRep() {
     const rp = S.rep;
-    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : '')) + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
+    return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
   }
   function vSettings() {
     const s = db.set, tog = (k, label) => '<label class="tog" for="set-' + k + '"><input type="checkbox" id="set-' + k + '" data-set="' + k + '"' + (s[k] ? ' checked' : '') + '>' + label + '</label>';
@@ -912,6 +924,8 @@
     rep(el) {
       const type = el.dataset.k, p = S.pos ? (S.pos.show || S.pos.ll) : center();
       const rp = { id: 'r' + Date.now().toString(36), type, ll: [+p[0].toFixed(6), +p[1].toFixed(6)], t: Date.now() };
+      const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      if (note) rp.note = note;
       db.reports.push(rp); save(); drawReports();
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }

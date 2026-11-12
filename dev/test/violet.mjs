@@ -1,0 +1,40 @@
+// Guidage en violet lumineux (sans halo) et commentaire sur un signalement.
+import { openLive, GPS, START, drive } from './live.mjs';
+import { idle } from './lib.mjs';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const res = []; const check = (l, ok, d) => { res.push(ok); console.log((ok ? 'ok   ' : 'FAIL ') + l + (d ? '  ' + d : '')); };
+const t = await openLive({ init: GPS, dpr: 2 }); const { page } = t;
+await page.evaluate(s => window.__fix(s[1], s[0], 0, null, 8), START); await sleep(1500);
+const shots = []; const snap = async n => { await idle(page); await sleep(900); shots.push([n, (await page.screenshot()).toString('base64')]); };
+const plan = async () => { await page.click('#q'); await page.fill('#q', '52.0853, 5.1760'); await page.waitForSelector('#results .row'); await page.click('#results .row >> nth=0'); await page.waitForFunction(() => J.app.S.view === 'place'); await page.click('[data-act="route"]'); await page.waitForFunction(() => J.app.S.routes.length > 0, null, { timeout: 25000 }); await idle(page); await sleep(700); };
+const cols = () => page.evaluate(() => ({ bord: J.app.map.getPaintProperty('route-case', 'line-color'), trait: JSON.stringify(J.app.map.getPaintProperty('route', 'line-gradient')).match(/#[0-9A-Fa-f]{6}/g).pop(), coeur: JSON.stringify(J.app.map.getPaintProperty('route-core', 'line-gradient')).includes('.85'), panneau: getComputedStyle(document.querySelector('#navsign')).backgroundColor }));
+await plan(); const c0 = await cols();
+check('avant de démarrer : le trajet reste bleu', c0.trait === '#1E6FD9' && !c0.coeur, JSON.stringify(c0));
+await page.click('[data-act="start"]'); await page.waitForFunction(() => !!J.app.S.nav);
+await drive(page, { from: 0, to: 420, step: 12, ms: 90, v: 11 }); await sleep(800);
+const c1 = await cols();
+check('guidage lancé : trajet, cœur et panneau en violet', c1.trait === '#7D5BFF' && c1.coeur && c1.panneau === 'rgb(125, 91, 255)', JSON.stringify(c1));
+await snap('Guidage, carte claire');
+// signalement avec commentaire, pendant le guidage
+await page.click('#reportbtn'); await page.waitForSelector('#rep-note'); await page.fill('#rep-note', 'voie de droite fermée'); await snap('Signaler avec un commentaire');
+await page.click('[data-act="rep"][data-k="works"]'); await sleep(500);
+const saved = await page.evaluate(() => J.app.db ? J.app.db.reports.slice(-1)[0] : JSON.parse(localStorage.getItem('jalon.v1')).reports.slice(-1)[0]);
+check('le commentaire est enregistré avec le signalement', saved && saved.note === 'voie de droite fermée', JSON.stringify(saved));
+await page.click('[data-act="stop"]'); await sleep(700);
+const c2 = await cols();
+check('guidage arrêté : le trajet redevient bleu', c2.trait === '#1E6FD9' && !c2.coeur, JSON.stringify(c2));
+// on repasse devant : l'alerte affiche et dit le commentaire
+await page.click('#theme'); await sleep(1800); await idle(page);
+await page.evaluate(() => { window.__said = []; });
+await page.click('[data-act="start"]'); await page.waitForFunction(() => !!J.app.S.nav);
+await drive(page, { from: 0, to: 330, step: 12, ms: 90, v: 11 }); await sleep(900);
+const al = await page.evaluate(() => ({ vu: !document.querySelector('#alert').hidden, txt: document.querySelector('#alert').textContent, dit: (window.__said || []).join(' | ') }));
+check('à l’approche : l’alerte affiche le commentaire', al.vu && al.txt.includes('voie de droite fermée'), al.txt.slice(0, 90));
+check('à l’approche : la voix lit le commentaire', /Travaux signalés[^|]*voie de droite fermée/.test(al.dit), al.dit.slice(-120));
+await snap('Alerte avec le commentaire, noir doux');
+const c3 = await cols(); check('noir doux : violet clair', c3.trait === '#B7A0FF', JSON.stringify(c3));
+const html = '<body style="margin:0;background:#16181C;font-family:Arial,sans-serif"><div style="display:flex;gap:24px;padding:28px">' + shots.map(([n, b]) => '<figure style="margin:0"><img src="data:image/png;base64,' + b + '" style="width:380px;border-radius:26px;display:block;box-shadow:0 0 0 1px #3A3E47"><figcaption style="color:#fff;font-size:21px;font-weight:700;text-align:center;padding-top:12px">' + n + '</figcaption></figure>').join('') + '</div></body>';
+const p2 = await page.context().newPage(); await p2.setViewportSize({ width: 380 * 3 + 24 * 2 + 56, height: 760 + 108 }); await p2.setContent(html); await sleep(500);
+await p2.screenshot({ path: '/home/claude/jalon/dist/lunavia-1-4.png' });
+console.log('erreurs', t.logs.filter(l => !/GPU stall|GL Driver|ERR_BLOCKED|Failed to load|sprite|Expected value|could not be loaded|fetching the script/.test(l)).slice(0, 4).join(' ; ') || 'aucune');
+console.log(res.every(Boolean) ? 'ok   violet et commentaire' : 'FAIL'); process.exit(res.every(Boolean) ? 0 : 1);
