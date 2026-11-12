@@ -1316,6 +1316,7 @@ J.live = (function () {
     const j = await getJSON('https://data.geopf.fr/geocodage/search?q=' + encodeURIComponent(q.slice(0, 190)) + '&limit=5&autocomplete=1&index=address' + bias, { signal }, 4000);
     return (j.features || []).map(banPlace).filter(Boolean);
   }
+  const inFrance = ll => ll[0] > -5.3 && ll[0] < 9.7 && ll[1] > 41.2 && ll[1] < 51.2;
   const SEEN = new Map();
   async function search(q, near, opts) {
     const m = String(q).match(/^\s*(-?\d{1,2}(?:[.,]\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
@@ -1330,23 +1331,57 @@ J.live = (function () {
     const key = nrm(q) + '|' + (near ? near[0].toFixed(2) + ',' + near[1].toFixed(2) : '');
     const hit = SEEN.get(key);
     if (hit && Date.now() - hit.t < 300000) return hit.list;
-    const merge = (places, adr) => {
-      adr = (adr || []).filter(p => p.score >= (addr ? 0.4 : 0.6)); places = places || [];
-      const list = addr ? adr.slice(0, 4).concat(places) : places.slice(0, 6).concat(adr.slice(0, 2), places.slice(6)), out = [];
+    // lieux d'abord ceux qui sont près de moi, puis les commerces de l'annuaire officiel proches, puis le reste
+    const merge = (places, adr, ent) => {
+      adr = (adr || []).filter(p => p.score >= (addr ? 0.4 : 0.6)); places = places || []; ent = ent || [];
+      const dist = p => (near ? G.hav(near, p.ll) : 0), close = p => dist(p) < 50000;
+      const nearP = places.filter(close), farP = places.filter(p => !close(p)), nearE = ent.filter(close).slice(0, 4), farE = ent.filter(p => !close(p)).slice(0, 2);
+      const list = addr ? adr.slice(0, 4).concat(places, ent.slice(0, 3)) : nearP.slice(0, 5).concat(nearE, adr.slice(0, 2), nearP.slice(5), farP, farE), out = [];
       list.forEach(p => { if (!out.some(o => (nrm(o.name) === nrm(p.name) && G.hav(o.ll, p.ll) < 400) || G.hav(o.ll, p.ll) < 8)) out.push(p); });
-      return out.slice(0, 8);
+      return out.slice(0, 9);
     };
     const signal = opts && opts.signal, part = opts && opts.onPartial;
-    let places = null, adr = null, done = 0;
-    const tell = () => { if (part && done < 2) { const l = merge(places, adr); if (l.length) part(l); } };
+    let places = null, adr = null, ent = null, done = 0;
+    const tell = () => { if (part && done < 3) { const l = merge(places, adr, ent); if (l.length) part(l); } };
     const a = photon(q, near, signal).then(v => { places = v; done++; tell(); return true; }, () => { done++; return false; });
     const b = (nrm(q).length >= 3 ? ban(q, near, signal) : Promise.resolve([])).then(v => { adr = v; done++; tell(); return true; }, () => { done++; return false; });
-    const ok = await Promise.all([a, b]);
+    const c = (!addr && nrm(q).length >= 3 && near && inFrance(near) ? firms(q, near, signal) : Promise.resolve([])).then(v => { ent = v; done++; tell(); return true; }, () => { done++; return false; });
+    const ok = await Promise.all([a, b, c]);
     if (signal && signal.aborted) throw new Error('abandon');
-    if (!ok[0] && !ok[1]) throw new Error('search');
-    const out = merge(places, adr);
+    if (!ok[0] && !ok[1] && !(ok[2] && ent && ent.length)) throw new Error('search');
+    const out = merge(places, adr, ent);
     if (ok[0]) { SEEN.set(key, { t: Date.now(), list: out }); if (SEEN.size > 60) SEEN.delete(SEEN.keys().next().value); }
     return out;
+  }
+  /* Commerces et entreprises : l'annuaire officiel (API Recherche d'entreprises, données Sirene). Il connaît des enseignes
+     absentes d'OpenStreetMap (un magasin de plomberie, un grossiste…). On cherche dans le département où l'on se trouve
+     et dans toute la France, et on ne garde que les établissements ouverts qui ont une position. */
+  const DEPT = { at: null, code: '' };
+  async function dept(near, signal) {
+    if (DEPT.at && G.hav(DEPT.at, near) < 6000) return DEPT.code;
+    try {
+      const j = await getJSON('https://data.geopf.fr/geocodage/reverse?lon=' + near[0].toFixed(5) + '&lat=' + near[1].toFixed(5) + '&limit=1&index=address', { signal }, 3500);
+      const pr = j.features && j.features[0] && j.features[0].properties, cc = String((pr && (pr.citycode || pr.postcode)) || '');
+      DEPT.at = near.slice(); DEPT.code = /^97/.test(cc) ? cc.slice(0, 3) : cc.slice(0, 2);
+    } catch (e) { return ''; }
+    return DEPT.code;
+  }
+  const nice = t => String(t || '').toLowerCase().replace(/(^|[\s\-'’(])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase());
+  async function firms(q, near, signal) {
+    const d = await dept(near, signal), base = 'https://recherche-entreprises.api.gouv.fr/search?q=' + encodeURIComponent(q.slice(0, 80)) + '&etat_administratif=A&per_page=6&limite_matching_etablissements=12';
+    const res = await Promise.allSettled([d ? getJSON(base + '&departement=' + encodeURIComponent(d), { signal }, 4500) : Promise.resolve({ results: [] }), getJSON(base, { signal }, 4500)]);
+    if (res.every(r => r.status === 'rejected')) throw new Error('annuaire');
+    const out = [], qn = nrm(q);
+    res.forEach(r => (r.status === 'fulfilled' && r.value && r.value.results || []).forEach(e => (e.matching_etablissements || []).forEach(m => {
+      const lat = parseFloat(m.latitude), lon = parseFloat(m.longitude);
+      if (m.etat_administratif !== 'A' || !isFinite(lat) || !isFinite(lon)) return;
+      const signs = (m.liste_enseignes || []).filter(Boolean), sign = signs.find(x => nrm(x).indexOf(qn.split(' ')[0]) >= 0) || signs[0] || m.nom_commercial || e.nom_complet || '';
+      if (!sign) return;
+      const adr = nice(String(m.adresse || '').replace(/\s+/g, ' ').trim()).replace(/ (De|Des|Du|La|Le|Les|Et|En|Sur|Sous|Aux|Au) /g, x => x.toLowerCase()).replace(/\b(Zi|Zac|Za|Zae|Rn|Rd|Cc) /g, x => x.toUpperCase()).replace(/ (D|L)(['’])/g, (x, a, b) => ' ' + a.toLowerCase() + b);
+      out.push({ id: 'e' + (m.siret || lat + ',' + lon), name: nice(sign), sub: adr, ll: [lon, lat], kind: 'poi', cat: 'shop', extra: { lines: adr ? [adr] : [] } });
+    })));
+    const seen = new Set();
+    return out.filter(p => (seen.has(p.id) ? false : seen.add(p.id))).sort((x, y) => G.hav(near, x.ll) - G.hav(near, y.ll)).slice(0, 8);
   }
   async function reverse(ll) {
     try {
@@ -1633,7 +1668,6 @@ J.live = (function () {
   let busy = false;
   /* Quand la carte ne connaît pas le panneau, on applique la règle générale française selon le type de route.
      C'est une estimation (elle ignore les panneaux particuliers) : elle est renvoyée en négatif, et affichée en gris. */
-  const inFrance = ll => ll[0] > -5.3 && ll[0] < 9.7 && ll[1] > 41.2 && ll[1] < 51.2;
   function frDefault(kind, urban) {
     if (kind === 'living_street') return 20;
     if (kind === 'motorway') return 130;
@@ -1672,7 +1706,7 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, shared, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();
 
 /* ---------- Lunavia : l'application ---------- */
@@ -2709,7 +2743,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.6.0.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.6.1.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -2950,7 +2984,7 @@ J.live = (function () {
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
   /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
      Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
-  const BUILD = '1.6.0-mwdoxex2';
+  const BUILD = '1.6.1-mwe4g42i';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
     $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;

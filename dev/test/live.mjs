@@ -3,7 +3,7 @@
 import { open, idle, sleep, state, closeAll } from './lib.mjs';
 
 const BED = 'http://127.0.0.1:8003/';
-const HOSTS = ['tiles.openfreemap.org', 'photon.komoot.io', 'overpass-api.de', 'overpass.private.coffee', 'data.economie.gouv.fr', 'data.geopf.fr', 'valhalla1.openstreetmap.de', 'routing.openstreetmap.de', 'api.open-meteo.com', 'ygofvzisazupdbstksqp.supabase.co'];
+const HOSTS = ['tiles.openfreemap.org', 'photon.komoot.io', 'overpass-api.de', 'overpass.private.coffee', 'data.economie.gouv.fr', 'data.geopf.fr', 'valhalla1.openstreetmap.de', 'routing.openstreetmap.de', 'api.open-meteo.com', 'ygofvzisazupdbstksqp.supabase.co', 'recherche-entreprises.api.gouv.fr'];
 export const bed = async (u, route, req) => {
   const x = new URL(u);
   if (!HOSTS.includes(x.host)) return false;

@@ -196,6 +196,17 @@ http.createServer(async (req, res) => {
       if (p === '/_rows') { if (req.method === 'POST') { const o = JSON.parse(await body(req)); if (o.reset) SBROWS.length = 0; if (o.add) SBROWS.push(Object.assign({ id: 'srv-' + (SBROWS.length + 1), created_at: new Date().toISOString(), yes: 0, no: 0, note: null }, o.add)); } return json(res, SBROWS); }
       return json(res, { message: 'inconnu' }, 404);
     }
+    if (host === 'recherche-entreprises.api.gouv.fr') { // annuaire des entreprises : la réponse réelle pour « cedeo » dans l'Aude
+      if (!/cedeo/i.test(q.get('q') || '')) return json(res, { results: [], total_results: 0 });
+      const all = [
+        { siret: '1', adresse: 'ZI DE PLAISANCE RUE DES RATACAS 11100 NARBONNE', libelle_commune: 'NARBONNE', code_postal: '11100', latitude: '43.170314036', longitude: '2.9802780995', liste_enseignes: ['CEDEO'], nom_commercial: null, etat_administratif: 'A' },
+        { siret: '2', adresse: "44 ALLEE D'IENA 11000 CARCASSONNE", libelle_commune: 'CARCASSONNE', code_postal: '11000', latitude: '43.211711076765', longitude: '2.34513295014565', liste_enseignes: ['CEDEO'], nom_commercial: null, etat_administratif: 'F' },
+        { siret: '3', adresse: '34 ET 36 BOULEVARD FREDERIC MISTRAL 11100 NARBONNE', libelle_commune: 'NARBONNE', code_postal: '11100', latitude: '43.186369082', longitude: '3.0028236761', liste_enseignes: ['CEDEO'], nom_commercial: null, etat_administratif: 'F' },
+        { siret: '4', adresse: '12 RUE DE LA GARE 75012 PARIS', libelle_commune: 'PARIS', code_postal: '75012', latitude: '48.84', longitude: '2.38', liste_enseignes: ['CEDEO'], nom_commercial: null, etat_administratif: 'A' }
+      ];
+      const d = q.get('departement');
+      return json(res, { results: [{ nom_complet: 'DISTRIBUTION SANITAIRE CHAUFFAGE (D.S.C.)', matching_etablissements: d ? all.filter(e => e.code_postal.startsWith(d)) : all }], total_results: 1 });
+    }
     if (host === 'api.open-meteo.com') {
       const now = new Date(); const hours = []; const temps = [], codes = [], pops = [];
       for (let i = 0; i < 48; i++) { const d = new Date(now.getTime() + i * 3600000); hours.push(d.toISOString().slice(0, 13) + ':00'); temps.push(9 + Math.round(4 * Math.sin(i / 4))); codes.push(i > 2 ? 61 : 3); pops.push(i > 2 ? 70 : 10); }
