@@ -880,32 +880,53 @@
     drawPuck();
     map.easeTo({ pitch: 0, bearing: 0, duration: 600, essential: true });
   }
+  /* Mauvaise route : on recalcule tout de suite depuis l'endroit où l'on est, dans le sens où l'on roule.
+     Parmi les trajets possibles, on prend le plus rapide avec le trafic du moment. */
   async function reroute(f) {
     const n = S.nav;
-    n.lastRe = Date.now(); n.off = 0;
+    if (n.rerouting) return;
+    n.rerouting = true; n.lastRe = Date.now(); n.off = 0; n.wrong = 0;
     toast('Nouvel itinéraire…');
     try {
-      const rs = await P.route(f.ll, n.dest.ll, n.travel, routeOpts({ heading: (f.speed || 0) > 3 && typeof f.heading === 'number' ? f.heading : undefined }));
-      if (S.nav !== n || !rs[0]) return;
-      n.route = rs[0]; n.s = 0; n.seg = 0; n.k = 0; n.said = {}; n.ui = -2;
+      const rs = (await P.route(f.ll, n.dest.ll, n.travel, routeOpts({ heading: (f.speed || 0) > 3 && typeof f.heading === 'number' ? f.heading : undefined }))).slice(0, 3);
+      if (S.nav !== n || !rs[0]) { n.rerouting = false; return; }
+      let best = rs[0];
+      if (rs.length > 1 && n.travel === 'car' && S.mode === 'live' && trafficOn() && P.trafficTime) {
+        const tt = await Promise.race([Promise.allSettled(rs.map(r => P.trafficTime(r.geom, tkey()))), new Promise(z => setTimeout(() => z(null), 3500))]);
+        if (S.nav !== n) return;
+        if (tt) { tt.forEach((x, i) => { if (x.status === 'fulfilled' && x.value) setTraffic(rs[i], x.value); }); best = rs.reduce((a, r) => (r.time < a.time ? r : a), rs[0]); }
+      }
+      n.route = best; n.s = 0; n.seg = 0; n.k = 0; n.said = {}; n.ui = -2;
       n.lim = null; n.limTo = null; n.li = 0; n.limFail = 0;
-      S.routes = [rs[0]]; S.sel = 0;
-      if (S.nav) { S.nav.tk = 1; S.nav.trafT = 0; }
+      n.zones = null; n.zoneSaid = null; n.tk = 1; n.trafT = best.traf ? Date.now() : 0; n.delay = best.delay || 0;
+      S.routes = [best]; S.sel = 0;
       indexReports();
-      setSrc('route', { type: 'FeatureCollection', features: [line(rs[0].geom)] });
+      setSrc('route', { type: 'FeatureCollection', features: [line(best.geom)] });
       setGrad(0, true);
+      anReset();
+      loadZones(n);
       say('Nouvel itinéraire', true);
-    } catch (e) { toast('Impossible de recalculer pour le moment.'); }
+      n.lastRe = Date.now();
+    } catch (e) { n.lastRe = Date.now() - 4000; /* nouvel essai dans quelques secondes, sans insister à l'écran */ if (!n.reFail) { n.reFail = true; toast('Recalcul impossible pour le moment, je réessaie.'); } }
+    n.rerouting = false;
   }
   function navUpdate(f) {
     const n = S.nav, r = n.route, g = r.geom;
     let m = G.nearest(g, r.cum, f.ll, n.seg - 4, n.seg + 45);
     if (m.d > 60) { const m2 = G.nearest(g, r.cum, f.ll, 0, g.length - 2); if (m2.d < m.d - 15) m = m2; }
-    const on = f.sim || m.d <= Math.max(45, Math.min(90, (f.acc || 0) * 1.3));
+    let on = f.sim || m.d <= Math.max(32, Math.min(80, (f.acc || 0) * 1.3));
+    // On roule nettement dans une autre direction que le trajet (rue manquée, demi-tour) : inutile d'attendre d'être loin.
+    if (!f.sim) {
+      const hd = (f.speed || 0) > 4 && typeof f.heading === 'number';
+      const diff = hd ? Math.abs(G.angDiff(f.heading, G.at(g, r.cum, Math.min(r.dist, m.s + 3)).brg)) : 0;
+      n.wrong = hd && diff > 60 && (m.d > 10 || diff > 120) ? (n.wrong || 0) + 1 : 0;
+      if (on && n.wrong >= (m.d > 20 ? 2 : 3)) on = false;
+      if (!on && n.wrong >= 1) n.off = Math.max(n.off, 1); // loin du trajet ET dans une autre direction : on recalcule sans attendre
+    }
     // le bruit du GPS ne doit pas faire reculer le repère : un petit retour en arrière est ignoré
     if (on && !f.sim && m.s < n.s && n.s - m.s < 25) m = { i: n.seg, s: n.s, pt: G.at(g, r.cum, n.s).pt, d: m.d };
     if (on) { n.off = 0; n.seg = m.i; n.s = m.s; f.show = m.pt; f.heading = G.at(g, r.cum, Math.min(r.dist, n.s + 5)).brg; ensureLimits(n); }
-    else { f.show = null; if (++n.off >= 3 && Date.now() - n.lastRe > 12000) reroute(f); }
+    else { f.show = null; if (++n.off >= 2 && Date.now() - n.lastRe > 7000) reroute(f); }
     drawPuck();
     if (on) anRoute(n, f); else anFree(f);
     let k = n.k;

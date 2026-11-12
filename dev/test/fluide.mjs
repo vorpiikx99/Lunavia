@@ -24,7 +24,7 @@ const out = await page.evaluate(async () => {
   }
   run = false;
   let back = 0, jump = 0, maxOff = 0, turn = 0; const steps = [];
-  for (let i = 1; i < samples.length; i++) { const ds = samples[i].s - samples[i - 1].s, dt = (samples[i].t - samples[i - 1].t) / 1000; steps.push(ds); if (ds < -0.3) back++; if (ds > 11) jump++; // avant la correction, le repère sautait de 14 m d'un coup à chaque position maxOff = Math.max(maxOff, samples[i].d); let db = Math.abs(samples[i].brg - samples[i - 1].brg); if (db > 180) db = 360 - db; if (i > 20) turn = Math.max(turn, db / Math.max(0.016, dt)); }
+  for (let i = 1; i < samples.length; i++) { const ds = samples[i].s - samples[i - 1].s, dt = (samples[i].t - samples[i - 1].t) / 1000; steps.push(ds); if (ds < -0.3) back++; if (ds > 11) jump++; maxOff = Math.max(maxOff, samples[i].d); let db = Math.abs(samples[i].brg - samples[i - 1].brg); if (db > 180) db = 360 - db; if (i > 20) turn = Math.max(turn, db / Math.max(0.016, dt)); }
   return { images: samples.length, reculs: back, sauts: jump, ecartRoute: +maxOff.toFixed(1), pasMax: +Math.max(...steps).toFixed(2), rotationMaxParImage: +turn.toFixed(2), parcouru: Math.round(samples[samples.length - 1].s - samples[0].s) };
 });
 console.log(JSON.stringify(out));
