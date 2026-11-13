@@ -386,3 +386,14 @@ a.btn{text-decoration:none}
 .aim::after{top:15.5px;left:-8px;height:3px;width:50px}
 /* « Sens interdit » est permanent : il prend toute la largeur, sous les signalements passagers */
 .repgrid [data-k="oneway"]{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:10px}
+
+/* « Sens interdit » : choix du sens, point visé, flèche sur la carte */
+.dirs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0 10px}
+.dirs.four{grid-template-columns:1fr 1fr}
+.dirbtn{flex-direction:column;gap:8px;padding:14px 8px;min-height:104px;justify-content:center;font-weight:600}
+.dirar{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:#C1121C;color:#fff;transition:transform .2s}
+.dirar .ic{width:26px;height:26px;fill:#fff;stroke:#fff}
+.draftpt{width:22px;height:22px;border-radius:50%;background:#C1121C;border:3px solid #fff;box-shadow:0 0 0 2px #C1121C,0 2px 6px rgba(0,0,0,.4);pointer-events:none}
+.owar{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
+.owar::before{content:"";position:absolute;left:-5px;top:-34px;width:10px;height:18px;background:#C1121C;border:2px solid #fff;border-bottom:0;border-radius:2px 2px 0 0}
+.owar::after{content:"";position:absolute;left:-10px;top:-46px;border:10px solid transparent;border-bottom:13px solid #C1121C;border-top:0;filter:drop-shadow(0 -1px 0 #fff)}

@@ -459,7 +459,7 @@
     M.reps.forEach((m, id) => { if (!ids.has(id)) { m.remove(); M.reps.delete(id); } });
     act.forEach(rp => {
       if (M.reps.has(rp.id)) return;
-      const m = mk(J.signs[rp.type], 'repm').setLngLat(rp.ll).addTo(map), el = m.getElement();
+      const m = mk(J.signs[rp.type] + (rp.type === 'oneway' && rp.hd != null ? '<i class="owar" data-hd="' + rp.hd + '" style="transform:rotate(' + Math.round(rp.hd - map.getBearing()) + 'deg)"></i>' : ''), 'repm').setLngLat(rp.ll).addTo(map), el = m.getElement();
       el.setAttribute('role', 'button'); el.setAttribute('aria-label', REPORTS[rp.type].label);
       el.addEventListener('click', () => { if (S.view === 'nav' || S.view === 'search') return; S.rep = rp; S.back = S.view === 'place' || S.view === 'pois' ? S.view : 'home'; go('rep'); });
       M.reps.set(rp.id, m);
@@ -836,7 +836,8 @@
   }
   // réglages du calcul : péages, autoroutes, et les routes que tu as signalées fermées
   function routeOpts(extra) {
-    const closed = activeReports().filter(r => r.type === 'closed' || r.type === 'oneway').map(r => r.ll); // routes fermées et sens interdits : jamais empruntés
+    // routes fermées : évitées dans les deux sens ; sens interdits : seulement dans le sens interdit (s'il est connu)
+    const closed = activeReports().filter(r => r.type === 'closed' || r.type === 'oneway').map(r => (r.type === 'oneway' && r.hd != null ? { ll: r.ll, hd: r.hd } : r.ll));
     return Object.assign({ avoidTolls: db.set.tolls, avoidHighways: db.set.hw, avoid: closed }, extra || {});
   }
   function wxUI() {
@@ -1105,6 +1106,37 @@
   function vReport() {
     return head('Que se passe-t-il ?', S.aiming ? 'Fais glisser la carte pour mettre la croix sur l’endroit exact, puis choisis le type.' : S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + (!S.aiming && !S.nav && S.mode === 'live' ? '<button type="button" class="btn aimbtn" data-act="aim">' + ic('pin') + 'Viser un autre endroit sur la carte</button>' : '') + '<label class="repnote-f" for="rep-note">Commentaire (facultatif)<input id="rep-note" type="text" maxlength="80" enterkeyhint="done" autocomplete="off" placeholder="Ex. : voie de droite, gros trou…"></label><p class="note">Écris ton commentaire si tu veux, puis touche le type de signalement.</p><div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
   }
+  // « Sens interdit » : on montre l'endroit et on demande dans quel sens on n'a pas le droit de rouler
+  function pickDir() {
+    const p = S.aiming ? aimLL() : S.pos ? (S.pos.show || S.pos.ll) : center();
+    const noteEl = $('#rep-note'); S.dirNote = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    S.dir = { ll: p, hd: null, name: '', loading: true };
+    S.aiming = false; placeAim();
+    go('dir'); drawDraft();
+    const ask = S.dir;
+    // le point rouge reste visible au-dessus du panneau, une fois celui-ci à sa taille définitive
+    P.roadAt(p).then(r => { if (S.dir !== ask) return; ask.loading = false; if (r) { ask.hd = r.hd; ask.ll = r.ll; ask.name = r.name; } if (S.view === 'dir') { render(); drawDraft(); } })
+      .catch(() => { if (S.dir !== ask) return; ask.loading = false; if (S.view === 'dir') { render(); drawDraft(); } });
+  }
+  function drawDraft() {
+    if (!S.dir || !map) return;
+    if (!M.draft) M.draft = mk('<span></span>', 'draftpt').setLngLat(S.dir.ll).addTo(map);
+    else M.draft.setLngLat(S.dir.ll);
+    map.easeTo({ center: S.dir.ll, zoom: Math.max(map.getZoom(), 17), offset: off(), duration: 400 });
+  }
+  function clearDraft() { if (M.draft) { M.draft.remove(); M.draft = null; } }
+  function vDir() {
+    const d = S.dir, b = map ? map.getBearing() : 0;
+    const arrowBtn = (hd, txt) => '<button type="button" class="btn dirbtn" data-act="rep" data-k="oneway" data-hd="' + (hd == null ? '' : Math.round(hd)) + '"><span class="dirar" data-hd="' + Math.round(hd == null ? 0 : hd) + '" style="transform:rotate(' + Math.round((hd == null ? 0 : hd) - b) + 'deg)">' + ic('nav') + '</span>' + txt + '</button>';
+    let h = head('Dans quel sens est-ce interdit ?', d.name ? 'Sur ' + esc(d.name) + ', au point rouge.' : 'Au point rouge sur la carte.');
+    if (d.loading) return h + '<p class="empty">Recherche de la route…</p>';
+    if (d.hd != null) {
+      h += '<p class="note">Touche la flèche qui montre le sens dans lequel on n’a <b>pas</b> le droit de rouler. L’autre sens restera autorisé.</p><div class="dirs">' + arrowBtn(d.hd, 'Interdit dans ce sens') + arrowBtn((d.hd + 180) % 360, 'Interdit dans ce sens') + '</div>';
+    } else {
+      h += '<p class="note">Je n’ai pas trouvé la route à cet endroit. Choisis la flèche la plus proche du sens interdit, telle que tu vois la carte.</p><div class="dirs four">' + [0, 90, 180, 270].map(a => arrowBtn((a + b + 360) % 360, ['Vers le haut', 'Vers la droite', 'Vers le bas', 'Vers la gauche'][a / 90])).join('') + '</div>';
+    }
+    return h + '<button type="button" class="btn aimbtn" data-act="rep" data-k="oneway" data-hd="">Interdit dans les deux sens</button>';
+  }
   function vRep() {
     const rp = S.rep;
     return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : rp.sh ? ' · signalé par un autre utilisateur' : rp.sid ? ' · partagé' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
@@ -1148,11 +1180,11 @@
     app.classList.toggle('navon', !!S.nav);
     $('#navsign').hidden = !S.nav;
     if (!S.nav) { $('#ns-then').hidden = true; $('#lanes').hidden = true; }
-    $('#reportbtn').hidden = v === 'report' || v === 'settings' || v === 'about' || v === 'arrived';
+    $('#reportbtn').hidden = v === 'report' || v === 'dir' || v === 'settings' || v === 'about' || v === 'arrived';
     $('#demoflag').hidden = S.mode !== 'demo' || v === 'about';
     if (v === 'search') renderResults();
     else {
-      sheetIn.innerHTML = v === 'place' ? vPlace() : v === 'route' ? vRoute() : v === 'nav' ? vNav() : v === 'pois' ? vPois() : v === 'report' ? vReport() : v === 'rep' ? vRep() : v === 'settings' ? vSettings() : v === 'about' ? vAbout() : v === 'arrived' ? vArrived() : vHome();
+      sheetIn.innerHTML = v === 'place' ? vPlace() : v === 'route' ? vRoute() : v === 'nav' ? vNav() : v === 'pois' ? vPois() : v === 'report' ? vReport() : v === 'dir' ? vDir() : v === 'rep' ? vRep() : v === 'settings' ? vSettings() : v === 'about' ? vAbout() : v === 'arrived' ? vArrived() : vHome();
       sheetIn.scrollTop = 0;
     }
     syncInsets();
@@ -1166,6 +1198,7 @@
       case 'route': S.routeSeq++; S.loading = false; clearRoute(); if (S.place) { setDest(S.place.ll); go('place'); } else { setDest(null); go('home'); } break;
       case 'pois': closePois(); break;
       case 'arrived': S.arrived = null; S.place = null; setDest(null); go('home'); break;
+      case 'dir': S.dir = null; clearDraft(); S.aiming = false; placeAim(); go('report'); return;
       case 'report': case 'rep': case 'settings': case 'about': S.wipe = false; S.aiming = false; placeAim(); go(S.nav ? 'nav' : S.back === 'place' && !S.place ? 'home' : S.back === 'pois' && !S.poi ? 'home' : S.back || 'home'); break;
       default: go('home');
     }
@@ -1230,15 +1263,18 @@
     },
     aim() { S.aiming = true; unfollow(); render(); placeAim(); },
     rep(el) {
+      if (el.dataset.k === 'oneway' && el.dataset.hd == null && S.mode === 'live') { pickDir(); return; }
       const type = el.dataset.k, p = S.aiming && S.view === 'report' ? aimLL() : S.pos ? (S.pos.show || S.pos.ll) : center();
       const rp = { id: 'r' + Date.now().toString(36), type, ll: [+p[0].toFixed(6), +p[1].toFixed(6)], t: Date.now() };
-      const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      if (type === 'oneway' && S.dir) { rp.ll = S.dir.ll.map(x => +x.toFixed(6)); if (el.dataset.hd !== '' && el.dataset.hd != null) rp.hd = Math.round(+el.dataset.hd) % 360; S.dir = null; clearDraft(); }
+      const noteEl = $('#rep-note'), note = rp.type === 'oneway' && S.dirNote != null ? S.dirNote : noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      S.dirNote = null;
       if (note) rp.note = note;
       db.reports.push(rp); save(); drawReports();
       postShared(rp);
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
-      if (S.view === 'report') close(); // posé à la voix : on reste sur l'écran en cours
+      if (S.view === 'report' || S.view === 'dir') close(); // posé à la voix : on reste sur l'écran en cours
       if ((type === 'closed' || type === 'oneway') && S.nav && S.pos) reroute(S.pos);
       S.aiming = false; placeAim();
       toast(REPORTS[type].said + (type === 'oneway' ? ' : tes trajets ne passeront plus par là' : ' ici') + (REPORTS[type].local ? '' : sharing() ? ', partagé avec les autres utilisateurs' : S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
@@ -1456,6 +1492,8 @@
     map.on('rotate', northUI); map.on('pitch', northUI); map.on('zoom', zoomClasses);
     ['dragstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) unfollow(); }));
     ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) attrHide(); }));
+    // les flèches de sens (signalements « Sens interdit », choix du sens) suivent la rotation de la carte
+    map.on('rotate', () => { const b = map.getBearing(); document.querySelectorAll('.owar,.dirar').forEach(el => { el.style.transform = 'rotate(' + Math.round(+el.dataset.hd - b) + 'deg)'; }); });
     // pendant qu'un doigt est sur la carte, elle ne bouge pas toute seule
     const cv = map.getCanvasContainer();
     ['touchstart', 'mousedown'].forEach(ev => cv.addEventListener(ev, () => { AN.touch = true; }, { passive: true }));

@@ -300,7 +300,7 @@ J.demo = (function () {
       if (a.d > 1500 || b.d > 1500) return Promise.reject(new Error('far'));
       if (opts.avoid && opts.avoid.length) {
         opts.blocked = new Set();
-        opts.avoid.forEach(p => { const ne = nearEdge(p); if (ne.e && ne.d < 30) opts.blocked.add(edges.indexOf(ne.e)); });
+        opts.avoid.forEach(p => { const ne = nearEdge(p.ll || p); if (ne.e && ne.d < 30) opts.blocked.add(edges.indexOf(ne.e)); });
       }
       let r1 = astar(a.id, b.id, mode, opts);
       if (!r1 && opts.blocked) { opts.blocked = null; r1 = astar(a.id, b.id, mode, opts); } // aucun détour possible : on passe quand même

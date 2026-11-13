@@ -391,6 +391,17 @@ a.btn{text-decoration:none}
 .aim::after{top:15.5px;left:-8px;height:3px;width:50px}
 /* « Sens interdit » est permanent : il prend toute la largeur, sous les signalements passagers */
 .repgrid [data-k="oneway"]{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:10px}
+
+/* « Sens interdit » : choix du sens, point visé, flèche sur la carte */
+.dirs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0 10px}
+.dirs.four{grid-template-columns:1fr 1fr}
+.dirbtn{flex-direction:column;gap:8px;padding:14px 8px;min-height:104px;justify-content:center;font-weight:600}
+.dirar{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:#C1121C;color:#fff;transition:transform .2s}
+.dirar .ic{width:26px;height:26px;fill:#fff;stroke:#fff}
+.draftpt{width:22px;height:22px;border-radius:50%;background:#C1121C;border:3px solid #fff;box-shadow:0 0 0 2px #C1121C,0 2px 6px rgba(0,0,0,.4);pointer-events:none}
+.owar{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
+.owar::before{content:"";position:absolute;left:-5px;top:-34px;width:10px;height:18px;background:#C1121C;border:2px solid #fff;border-bottom:0;border-radius:2px 2px 0 0}
+.owar::after{content:"";position:absolute;left:-10px;top:-46px;border:10px solid transparent;border-bottom:13px solid #C1121C;border-top:0;filter:drop-shadow(0 -1px 0 #fff)}
 </style>
 <div id="app" data-view="home" data-mode="boot">
   <div id="map" role="application" aria-label="Carte"></div>
@@ -1108,7 +1119,7 @@ J.demo = (function () {
       if (a.d > 1500 || b.d > 1500) return Promise.reject(new Error('far'));
       if (opts.avoid && opts.avoid.length) {
         opts.blocked = new Set();
-        opts.avoid.forEach(p => { const ne = nearEdge(p); if (ne.e && ne.d < 30) opts.blocked.add(edges.indexOf(ne.e)); });
+        opts.avoid.forEach(p => { const ne = nearEdge(p.ll || p); if (ne.e && ne.d < 30) opts.blocked.add(edges.indexOf(ne.e)); });
       }
       let r1 = astar(a.id, b.id, mode, opts);
       if (!r1 && opts.blocked) { opts.blocked = null; r1 = astar(a.id, b.id, mode, opts); } // aucun détour possible : on passe quand même
@@ -1607,7 +1618,8 @@ J.live = (function () {
       if (opts.avoidTolls) req.costing_options.auto.use_tolls = 0;
       if (opts.avoidHighways) req.costing_options.auto.use_highways = 0;
     }
-    if (opts.avoid && opts.avoid.length) req.exclude_locations = opts.avoid.slice(0, 20).map(p => ({ lat: p[1], lon: p[0] })); // routes signalées fermées
+    // routes signalées fermées (les deux sens) et sens interdits (un seul sens : le cap donné)
+    if (opts.avoid && opts.avoid.length) req.exclude_locations = opts.avoid.slice(0, 20).map(p => { const ll = p.ll || p, o = { lat: ll[1], lon: ll[0] }; if (p.hd != null) { o.heading = Math.round(p.hd) % 360; o.heading_tolerance = 40; } return o; });
     const j = await getJSON(VALHALLA + '/route?json=' + encodeURIComponent(JSON.stringify(req)), {}, 16000);
     const out = [j.trip].concat((j.alternates || []).map(a => a && a.trip)).map(vTrip).filter(Boolean);
     if (!out.length) throw new Error('noroute');
@@ -1749,6 +1761,14 @@ J.live = (function () {
       return r.ok;
     }
   };
+  // sens de la route la plus proche d'un point (pour un sens interdit) : son cap et son nom
+  async function roadAt(ll) {
+    const j = await getJSON(VALHALLA + '/locate?json=' + encodeURIComponent(JSON.stringify({ locations: [{ lat: ll[1], lon: ll[0] }], costing: 'auto', verbose: true })), {}, 6000);
+    const e = ((j && j[0] && j[0].edges) || []).filter(x => typeof x.heading === 'number').sort((a, b) => (a.distance || 0) - (b.distance || 0))[0];
+    if (!e || e.distance > 40) return null;
+    const nm = e.edge_info && e.edge_info.names && e.edge_info.names[0];
+    return { hd: e.heading, ll: [e.correlated_lon, e.correlated_lat], name: nm || '' };
+  }
   // points de contrôle le long d'un trajet (OpenStreetMap), pour en déduire des zones de danger : jamais affichés tels quels
   async function cameras(geom) {
     const step = Math.max(1, Math.ceil(geom.length / 140)), pts = [];
@@ -1883,7 +1903,7 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, roadAt, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();
 
 /* ---------- Lunavia : l'application ---------- */
@@ -2347,7 +2367,7 @@ J.live = (function () {
     M.reps.forEach((m, id) => { if (!ids.has(id)) { m.remove(); M.reps.delete(id); } });
     act.forEach(rp => {
       if (M.reps.has(rp.id)) return;
-      const m = mk(J.signs[rp.type], 'repm').setLngLat(rp.ll).addTo(map), el = m.getElement();
+      const m = mk(J.signs[rp.type] + (rp.type === 'oneway' && rp.hd != null ? '<i class="owar" data-hd="' + rp.hd + '" style="transform:rotate(' + Math.round(rp.hd - map.getBearing()) + 'deg)"></i>' : ''), 'repm').setLngLat(rp.ll).addTo(map), el = m.getElement();
       el.setAttribute('role', 'button'); el.setAttribute('aria-label', REPORTS[rp.type].label);
       el.addEventListener('click', () => { if (S.view === 'nav' || S.view === 'search') return; S.rep = rp; S.back = S.view === 'place' || S.view === 'pois' ? S.view : 'home'; go('rep'); });
       M.reps.set(rp.id, m);
@@ -2724,7 +2744,8 @@ J.live = (function () {
   }
   // réglages du calcul : péages, autoroutes, et les routes que tu as signalées fermées
   function routeOpts(extra) {
-    const closed = activeReports().filter(r => r.type === 'closed' || r.type === 'oneway').map(r => r.ll); // routes fermées et sens interdits : jamais empruntés
+    // routes fermées : évitées dans les deux sens ; sens interdits : seulement dans le sens interdit (s'il est connu)
+    const closed = activeReports().filter(r => r.type === 'closed' || r.type === 'oneway').map(r => (r.type === 'oneway' && r.hd != null ? { ll: r.ll, hd: r.hd } : r.ll));
     return Object.assign({ avoidTolls: db.set.tolls, avoidHighways: db.set.hw, avoid: closed }, extra || {});
   }
   function wxUI() {
@@ -2993,6 +3014,37 @@ J.live = (function () {
   function vReport() {
     return head('Que se passe-t-il ?', S.aiming ? 'Fais glisser la carte pour mettre la croix sur l’endroit exact, puis choisis le type.' : S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + (!S.aiming && !S.nav && S.mode === 'live' ? '<button type="button" class="btn aimbtn" data-act="aim">' + ic('pin') + 'Viser un autre endroit sur la carte</button>' : '') + '<label class="repnote-f" for="rep-note">Commentaire (facultatif)<input id="rep-note" type="text" maxlength="80" enterkeyhint="done" autocomplete="off" placeholder="Ex. : voie de droite, gros trou…"></label><p class="note">Écris ton commentaire si tu veux, puis touche le type de signalement.</p><div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
   }
+  // « Sens interdit » : on montre l'endroit et on demande dans quel sens on n'a pas le droit de rouler
+  function pickDir() {
+    const p = S.aiming ? aimLL() : S.pos ? (S.pos.show || S.pos.ll) : center();
+    const noteEl = $('#rep-note'); S.dirNote = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    S.dir = { ll: p, hd: null, name: '', loading: true };
+    S.aiming = false; placeAim();
+    go('dir'); drawDraft();
+    const ask = S.dir;
+    // le point rouge reste visible au-dessus du panneau, une fois celui-ci à sa taille définitive
+    P.roadAt(p).then(r => { if (S.dir !== ask) return; ask.loading = false; if (r) { ask.hd = r.hd; ask.ll = r.ll; ask.name = r.name; } if (S.view === 'dir') { render(); drawDraft(); } })
+      .catch(() => { if (S.dir !== ask) return; ask.loading = false; if (S.view === 'dir') { render(); drawDraft(); } });
+  }
+  function drawDraft() {
+    if (!S.dir || !map) return;
+    if (!M.draft) M.draft = mk('<span></span>', 'draftpt').setLngLat(S.dir.ll).addTo(map);
+    else M.draft.setLngLat(S.dir.ll);
+    map.easeTo({ center: S.dir.ll, zoom: Math.max(map.getZoom(), 17), offset: off(), duration: 400 });
+  }
+  function clearDraft() { if (M.draft) { M.draft.remove(); M.draft = null; } }
+  function vDir() {
+    const d = S.dir, b = map ? map.getBearing() : 0;
+    const arrowBtn = (hd, txt) => '<button type="button" class="btn dirbtn" data-act="rep" data-k="oneway" data-hd="' + (hd == null ? '' : Math.round(hd)) + '"><span class="dirar" data-hd="' + Math.round(hd == null ? 0 : hd) + '" style="transform:rotate(' + Math.round((hd == null ? 0 : hd) - b) + 'deg)">' + ic('nav') + '</span>' + txt + '</button>';
+    let h = head('Dans quel sens est-ce interdit ?', d.name ? 'Sur ' + esc(d.name) + ', au point rouge.' : 'Au point rouge sur la carte.');
+    if (d.loading) return h + '<p class="empty">Recherche de la route…</p>';
+    if (d.hd != null) {
+      h += '<p class="note">Touche la flèche qui montre le sens dans lequel on n’a <b>pas</b> le droit de rouler. L’autre sens restera autorisé.</p><div class="dirs">' + arrowBtn(d.hd, 'Interdit dans ce sens') + arrowBtn((d.hd + 180) % 360, 'Interdit dans ce sens') + '</div>';
+    } else {
+      h += '<p class="note">Je n’ai pas trouvé la route à cet endroit. Choisis la flèche la plus proche du sens interdit, telle que tu vois la carte.</p><div class="dirs four">' + [0, 90, 180, 270].map(a => arrowBtn((a + b + 360) % 360, ['Vers le haut', 'Vers la droite', 'Vers le bas', 'Vers la gauche'][a / 90])).join('') + '</div>';
+    }
+    return h + '<button type="button" class="btn aimbtn" data-act="rep" data-k="oneway" data-hd="">Interdit dans les deux sens</button>';
+  }
   function vRep() {
     const rp = S.rep;
     return head(REPORTS[rp.type].label, 'Signalé ' + F.ago(rp.t) + (rp.ex ? ' · exemple de la démo' : rp.sh ? ' · signalé par un autre utilisateur' : rp.sid ? ' · partagé' : '')) + (rp.note ? '<p class="repnote">« ' + esc(rp.note) + ' »</p>' : '') + '<div class="actions"><button type="button" class="btn big" data-act="rep-yes">' + ic('check') + 'Toujours là</button><button type="button" class="btn big" data-act="rep-no">Ce n’est plus là</button></div>';
@@ -3013,7 +3065,7 @@ J.live = (function () {
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Trafic : TomTom. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.7.4.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Trafic : TomTom. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version 1.7.5.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -3036,11 +3088,11 @@ J.live = (function () {
     app.classList.toggle('navon', !!S.nav);
     $('#navsign').hidden = !S.nav;
     if (!S.nav) { $('#ns-then').hidden = true; $('#lanes').hidden = true; }
-    $('#reportbtn').hidden = v === 'report' || v === 'settings' || v === 'about' || v === 'arrived';
+    $('#reportbtn').hidden = v === 'report' || v === 'dir' || v === 'settings' || v === 'about' || v === 'arrived';
     $('#demoflag').hidden = S.mode !== 'demo' || v === 'about';
     if (v === 'search') renderResults();
     else {
-      sheetIn.innerHTML = v === 'place' ? vPlace() : v === 'route' ? vRoute() : v === 'nav' ? vNav() : v === 'pois' ? vPois() : v === 'report' ? vReport() : v === 'rep' ? vRep() : v === 'settings' ? vSettings() : v === 'about' ? vAbout() : v === 'arrived' ? vArrived() : vHome();
+      sheetIn.innerHTML = v === 'place' ? vPlace() : v === 'route' ? vRoute() : v === 'nav' ? vNav() : v === 'pois' ? vPois() : v === 'report' ? vReport() : v === 'dir' ? vDir() : v === 'rep' ? vRep() : v === 'settings' ? vSettings() : v === 'about' ? vAbout() : v === 'arrived' ? vArrived() : vHome();
       sheetIn.scrollTop = 0;
     }
     syncInsets();
@@ -3054,6 +3106,7 @@ J.live = (function () {
       case 'route': S.routeSeq++; S.loading = false; clearRoute(); if (S.place) { setDest(S.place.ll); go('place'); } else { setDest(null); go('home'); } break;
       case 'pois': closePois(); break;
       case 'arrived': S.arrived = null; S.place = null; setDest(null); go('home'); break;
+      case 'dir': S.dir = null; clearDraft(); S.aiming = false; placeAim(); go('report'); return;
       case 'report': case 'rep': case 'settings': case 'about': S.wipe = false; S.aiming = false; placeAim(); go(S.nav ? 'nav' : S.back === 'place' && !S.place ? 'home' : S.back === 'pois' && !S.poi ? 'home' : S.back || 'home'); break;
       default: go('home');
     }
@@ -3118,15 +3171,18 @@ J.live = (function () {
     },
     aim() { S.aiming = true; unfollow(); render(); placeAim(); },
     rep(el) {
+      if (el.dataset.k === 'oneway' && el.dataset.hd == null && S.mode === 'live') { pickDir(); return; }
       const type = el.dataset.k, p = S.aiming && S.view === 'report' ? aimLL() : S.pos ? (S.pos.show || S.pos.ll) : center();
       const rp = { id: 'r' + Date.now().toString(36), type, ll: [+p[0].toFixed(6), +p[1].toFixed(6)], t: Date.now() };
-      const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      if (type === 'oneway' && S.dir) { rp.ll = S.dir.ll.map(x => +x.toFixed(6)); if (el.dataset.hd !== '' && el.dataset.hd != null) rp.hd = Math.round(+el.dataset.hd) % 360; S.dir = null; clearDraft(); }
+      const noteEl = $('#rep-note'), note = rp.type === 'oneway' && S.dirNote != null ? S.dirNote : noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      S.dirNote = null;
       if (note) rp.note = note;
       db.reports.push(rp); save(); drawReports();
       postShared(rp);
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
-      if (S.view === 'report') close(); // posé à la voix : on reste sur l'écran en cours
+      if (S.view === 'report' || S.view === 'dir') close(); // posé à la voix : on reste sur l'écran en cours
       if ((type === 'closed' || type === 'oneway') && S.nav && S.pos) reroute(S.pos);
       S.aiming = false; placeAim();
       toast(REPORTS[type].said + (type === 'oneway' ? ' : tes trajets ne passeront plus par là' : ' ici') + (REPORTS[type].local ? '' : sharing() ? ', partagé avec les autres utilisateurs' : S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
@@ -3262,7 +3318,7 @@ J.live = (function () {
   document.addEventListener('securitypolicyviolation', () => { cspSeen = true; });
   /* À chaque ouverture : un écran de chargement pendant que l'appli regarde s'il existe une version plus récente.
      Si oui, elle la charge avant de démarrer. Sans réseau, ou dans l'aperçu de Claude, elle démarre telle quelle. */
-  const BUILD = '1.7.4-mwf9ab03';
+  const BUILD = '1.7.5-mwfa5k45';
   async function checkUpdate() {
     const msg = $('#sp-msg'), t0 = Date.now(), hosted = !!document.querySelector('meta[content="jalon:carte"]');
     $('#sp-logo').innerHTML = hosted ? '<img src="icons/icon-192.png" alt="" width="112" height="112">' : J.logo;
@@ -3344,6 +3400,8 @@ J.live = (function () {
     map.on('rotate', northUI); map.on('pitch', northUI); map.on('zoom', zoomClasses);
     ['dragstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) unfollow(); }));
     ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) attrHide(); }));
+    // les flèches de sens (signalements « Sens interdit », choix du sens) suivent la rotation de la carte
+    map.on('rotate', () => { const b = map.getBearing(); document.querySelectorAll('.owar,.dirar').forEach(el => { el.style.transform = 'rotate(' + Math.round(+el.dataset.hd - b) + 'deg)'; }); });
     // pendant qu'un doigt est sur la carte, elle ne bouge pas toute seule
     const cv = map.getCanvasContainer();
     ['touchstart', 'mousedown'].forEach(ev => cv.addEventListener(ev, () => { AN.touch = true; }, { passive: true }));

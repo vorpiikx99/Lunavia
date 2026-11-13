@@ -30,10 +30,20 @@ await page.evaluate(mid => { const m = J.app.map, el = document.querySelector('#
 const head = await page.evaluate(() => document.querySelector('#sheet').textContent);
 check('« Viser un autre endroit » : une croix de visée apparaît', /croix/.test(head) && await page.evaluate(() => !document.querySelector('#aim').hidden));
 await snap('Signaler un sens interdit');
-await page.click('[data-k="oneway"]'); await sleep(800);
+await page.click('[data-k="oneway"]');
+await page.waitForSelector('.dirbtn'); await sleep(900);
+const dirs = await page.evaluate(() => [...document.querySelectorAll('.dirbtn')].map(b => b.dataset.hd));
+check('« Sens interdit » demande dans quel sens : deux flèches le long de la route', dirs.length === 2 && dirs[0] !== '' && Math.abs(((+dirs[0] - +dirs[1]) + 360) % 360 - 180) < 1, dirs.join(' / '));
+await snap('Dans quel sens ?');
+// le sens du trajet à cet endroit : c'est lui qu'on interdit ; l'autre sens reste permis
+const capTrajet = await page.evaluate(mid => { const r = J.app.S.routes.length ? null : null; return null; }, first.mid);
+const want = await page.evaluate(([geom, mid]) => { const G = J.geo, c = G.cum(geom), m = G.nearest(geom, c, mid, 0, geom.length - 2); return G.at(geom, c, m.s).brg; }, [first.geom, first.mid]);
+const pick = dirs.slice(0, 2).sort((a, b) => Math.abs(((+a - want + 540) % 360) - 180) - Math.abs(((+b - want + 540) % 360) - 180))[0]; // le sens du trajet
+await page.click('.dirbtn[data-hd="' + pick + '"]'); await sleep(800);
 const rp = await page.evaluate(() => J.app.db.reports.slice(-1)[0]);
+check('le sens choisi est enregistré avec le signalement', rp.hd === +pick, 'cap ' + rp.hd + ' (trajet ' + Math.round(want) + ')');
 const dAim = await page.evaluate(([a, b]) => J.geo.hav(a, b), [rp.ll, first.mid]);
-check('le sens interdit est posé sous la croix, pas à ma position', rp.type === 'oneway' && dAim < 4, Math.round(dAim) + ' m');
+check('le sens interdit est posé sous la croix, recalé sur la route', rp.type === 'oneway' && dAim < 12, Math.round(dAim) + ' m');
 check('il est gardé sur l’appareil et n’est pas envoyé aux autres', !rp.sid);
 check('la croix disparaît une fois le signalement posé', await page.evaluate(() => document.querySelector('#aim').hidden));
 // le même trajet ne passe plus par là
@@ -45,8 +55,18 @@ await snap('Nouveau trajet : évite le sens interdit');
 check('pas d’alerte vocale pour un sens interdit', await page.evaluate(() => !J.app.S.nav || !J.app.S.nav.reps || !J.app.S.nav.reps.some(x => x.rp.type === 'oneway')));
 const { chromium } = await import('/opt/npm-tools/node_modules/playwright/index.mjs');
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-const p2 = await b.newPage({ viewport: { width: 380 * 3 + 24 * 2 + 56, height: 760 + 108 } });
+const p2 = await b.newPage({ viewport: { width: 380 * shots.length + 24 * (shots.length - 1) + 56, height: 760 + 108 } });
 await p2.setContent('<body style="margin:0;background:#16181C;font-family:Arial,sans-serif"><div style="display:flex;gap:24px;padding:28px">' + shots.map(([n, s]) => '<figure style="margin:0"><img src="data:image/png;base64,' + s + '" style="width:380px;border-radius:26px;display:block;box-shadow:0 0 0 1px #3A3E47"><figcaption style="color:#fff;font-size:21px;font-weight:700;text-align:center;padding-top:12px">' + n + '</figcaption></figure>').join('') + '</div></body>');
 await p2.screenshot({ path: '/home/claude/jalon/dist/lunavia-sens-interdit.png' }); await b.close();
+// dans l'autre sens, la même route reste permise : on fait le trajet inverse
+await page.evaluate(() => J.app.go('home')); await sleep(200);
+const back = await page.evaluate(async ([geom, mid]) => {
+  const G = J.geo, c = G.cum(geom), m = G.nearest(geom, c, mid, 0, geom.length - 2), a = G.at(geom, c, m.s + 120).pt, b = G.at(geom, c, Math.max(0, m.s - 120)).pt;
+  const rs = await J.live.route(a, b, 'car', { avoid: J.app.db.reports.filter(r => r.type === 'oneway').map(r => ({ ll: r.ll, hd: r.hd })) });
+  const plain = await J.live.route(a, b, 'car', {});
+  const d = r => Math.round(G.nearest(r.geom, r.cum, mid, 0, r.geom.length - 2).d);
+  return { avec: d(rs[0]), sans: d(plain[0]) };
+}, [first.geom, first.mid]);
+check('dans l’autre sens, le trajet est le même que sans signalement', back.avec === back.sans, 'écart au point : ' + back.avec + ' m (sans signalement : ' + back.sans + ' m)');
 console.log('erreurs', t.logs.filter(l => !/GPU stall|GL Driver|ERR_BLOCKED|Failed to load|sprite|Expected value|could not be loaded|fetching the script|AJAXError|tomtom/i.test(l)).slice(0, 4).join(' ; ') || 'aucune');
 console.log(res.every(Boolean) ? 'ok   sens interdit et traînée' : 'FAIL'); process.exit(res.every(Boolean) ? 0 : 1);

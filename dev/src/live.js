@@ -387,7 +387,8 @@ J.live = (function () {
       if (opts.avoidTolls) req.costing_options.auto.use_tolls = 0;
       if (opts.avoidHighways) req.costing_options.auto.use_highways = 0;
     }
-    if (opts.avoid && opts.avoid.length) req.exclude_locations = opts.avoid.slice(0, 20).map(p => ({ lat: p[1], lon: p[0] })); // routes signalées fermées
+    // routes signalées fermées (les deux sens) et sens interdits (un seul sens : le cap donné)
+    if (opts.avoid && opts.avoid.length) req.exclude_locations = opts.avoid.slice(0, 20).map(p => { const ll = p.ll || p, o = { lat: ll[1], lon: ll[0] }; if (p.hd != null) { o.heading = Math.round(p.hd) % 360; o.heading_tolerance = 40; } return o; });
     const j = await getJSON(VALHALLA + '/route?json=' + encodeURIComponent(JSON.stringify(req)), {}, 16000);
     const out = [j.trip].concat((j.alternates || []).map(a => a && a.trip)).map(vTrip).filter(Boolean);
     if (!out.length) throw new Error('noroute');
@@ -529,6 +530,14 @@ J.live = (function () {
       return r.ok;
     }
   };
+  // sens de la route la plus proche d'un point (pour un sens interdit) : son cap et son nom
+  async function roadAt(ll) {
+    const j = await getJSON(VALHALLA + '/locate?json=' + encodeURIComponent(JSON.stringify({ locations: [{ lat: ll[1], lon: ll[0] }], costing: 'auto', verbose: true })), {}, 6000);
+    const e = ((j && j[0] && j[0].edges) || []).filter(x => typeof x.heading === 'number').sort((a, b) => (a.distance || 0) - (b.distance || 0))[0];
+    if (!e || e.distance > 40) return null;
+    const nm = e.edge_info && e.edge_info.names && e.edge_info.names[0];
+    return { hd: e.heading, ll: [e.correlated_lon, e.correlated_lat], name: nm || '' };
+  }
   // points de contrôle le long d'un trajet (OpenStreetMap), pour en déduire des zones de danger : jamais affichés tels quels
   async function cameras(geom) {
     const step = Math.max(1, Math.ceil(geom.length / 140)), pts = [];
@@ -663,5 +672,5 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, roadAt, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();
