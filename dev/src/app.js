@@ -15,7 +15,8 @@
   const KIND_IC = { fuel: 'fuel', charge: 'bolt', parking: 'park', food: 'food', shop: 'cart', pharma: 'cross', street: 'route', town: 'pin', home: 'home', work: 'work', pin: 'pin', other: 'pin', address: 'pin' };
   const REPORTS = {
     jam: { label: 'Bouchon', said: 'Bouchon signalé', ttl: 45 }, crash: { label: 'Accident', said: 'Accident signalé', ttl: 90 }, danger: { label: 'Danger', said: 'Danger signalé', ttl: 120 },
-    works: { label: 'Travaux', said: 'Travaux signalés', ttl: 1440 }, control: { label: 'Zone de contrôle', said: 'Zone de contrôle signalée', ttl: 60 }, closed: { label: 'Route fermée', said: 'Route fermée signalée', ttl: 1440 }
+    works: { label: 'Travaux', said: 'Travaux signalés', ttl: 1440 }, control: { label: 'Zone de contrôle', said: 'Zone de contrôle signalée', ttl: 60 }, closed: { label: 'Route fermée', said: 'Route fermée signalée', ttl: 1440 },
+    oneway: { label: 'Sens interdit', said: 'Sens interdit signalé', ttl: 5256000, local: true, quiet: true }
   };
   const FUELS = { gazole: 'Gazole', e10: 'SP95-E10', sp95: 'SP95', sp98: 'SP98', e85: 'E85', gpl: 'GPL' };
   const MODES = { car: { label: 'Voiture', icon: 'car' }, bike: { label: 'Vélo', icon: 'bike' }, foot: { label: 'À pied', icon: 'walk' } };
@@ -142,10 +143,13 @@
   function routeColors() {
     if (!map || !map.getLayer('route')) return;
     const f = S.nav ? S.nav.s / S.nav.route.dist : 0;
-    try { map.setPaintProperty('route-case', 'line-color', COL().casing); map.setPaintProperty('route', 'line-gradient', grad(f)); if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f)); } catch (e) { /* style en cours de changement */ }
+    try { map.setPaintProperty('route-case', 'line-gradient', caseGrad(f)); map.setPaintProperty('route', 'line-gradient', grad(f)); if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f)); } catch (e) { /* style en cours de changement */ }
   }
   const LW = x => ['interpolate', ['linear'], ['zoom'], 6, 3 + x * 0.5, 12, 5 + x * 0.8, 16, 8 + x, 19, 15 + x];
-  const grad = f => ['step', ['line-progress'], COL().done, Math.max(0, Math.min(0.9999, f || 0)), COL().line];
+  const CLR0 = 'rgba(0,0,0,0)';
+  // la partie déjà parcourue n'est plus dessinée : seul le chemin qui reste à faire apparaît
+  const grad = f => ['step', ['line-progress'], CLR0, Math.max(0, Math.min(0.9999, f || 0)), COL().line];
+  const caseGrad = f => ['step', ['line-progress'], CLR0, Math.max(0, Math.min(0.9999, f || 0)), COL().casing];
   const line = (geom, props) => ({ type: 'Feature', properties: props || {}, geometry: { type: 'LineString', coordinates: geom } });
   function setSrc(id, data) { SRC[id] = data; const s = map && map.getSource(id); if (s) s.setData(data); }
   let gradT = 0;
@@ -154,6 +158,7 @@
     if (!now && t - gradT < 450) return;
     gradT = t;
     if (map.getLayer('route')) map.setPaintProperty('route', 'line-gradient', grad(f));
+    if (map.getLayer('route-case')) map.setPaintProperty('route-case', 'line-gradient', caseGrad(f));
     if (map.getLayer('route-core')) map.setPaintProperty('route-core', 'line-gradient', coreGrad(f));
   }
   function anchor() {
@@ -185,7 +190,7 @@
     lay({ id: 'alts-case', type: 'line', source: 'alts', layout: round, paint: { 'line-color': c.altc, 'line-width': LW(3) } });
     lay({ id: 'alts', type: 'line', source: 'alts', layout: round, paint: { 'line-color': c.alt, 'line-width': LW(0) } });
     src('route', { type: 'geojson', data: SRC.route, lineMetrics: true });
-    lay({ id: 'route-case', type: 'line', source: 'route', layout: round, paint: { 'line-color': c.casing, 'line-width': LW(3.4) } });
+    lay({ id: 'route-case', type: 'line', source: 'route', layout: round, paint: { 'line-gradient': caseGrad(S.nav ? S.nav.s / S.nav.route.dist : 0), 'line-width': LW(3.4) } });
     lay({ id: 'route', type: 'line', source: 'route', layout: round, paint: { 'line-width': LW(0), 'line-gradient': grad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
     lay({ id: 'route-core', type: 'line', source: 'route', layout: round, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.1, 17, 3], 'line-gradient': coreGrad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
   }
@@ -206,6 +211,14 @@
     const el = $('#attrib');
     const txt = S.mode === 'demo' ? 'Carte de démonstration' : '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '') + (trafficOn() ? ' · Trafic © TomTom' : '');
     el.innerHTML = '<button type="button" class="ai" data-act="attr" aria-label="Sources de la carte" aria-expanded="' + el.classList.contains('open') + '">i</button><span class="at">' + txt + '</span>';
+  }
+  // la croix de visée : au centre de la partie visible de la carte (au-dessus du panneau du bas)
+  function aimPx() { const p = pad(), W = mapEl.clientWidth, H = mapEl.clientHeight; return [Math.round((p.left + W - p.right) / 2), Math.round((p.top + H - p.bottom) / 2)]; }
+  function aimLL() { return map.unproject(aimPx()).toArray(); }
+  function placeAim() {
+    const el = $('#aim'); if (!el) return;
+    el.hidden = !S.aiming;
+    if (S.aiming) { const q = aimPx(); el.style.left = q[0] + 'px'; el.style.top = q[1] + 'px'; }
   }
   function attrShow(ms) {
     const el = $('#attrib');
@@ -478,7 +491,7 @@
     SH.busy = false;
   }
   function postShared(rp) {
-    if (!sharing()) return;
+    if (!sharing() || REPORTS[rp.type].local) return;
     P.shared.post(rp).then(sid => { if (sid) { rp.sid = sid; save(); } }).catch(() => { toast('Signalement gardé sur cet appareil : le partage n’a pas pu se faire.'); });
   }
   function voteShared(rp, still) { if (rp && rp.sid && sharing()) P.shared.vote(rp.sid, still).catch(() => {}); }
@@ -525,7 +538,7 @@
   function indexReports() {
     const n = S.nav;
     if (!n) return;
-    n.reps = activeReports().map(rp => { const m = G.nearest(n.route.geom, n.route.cum, rp.ll, 0, n.route.geom.length - 2); return m.d < 45 ? { rp, s: m.s } : null; }).filter(Boolean);
+    n.reps = activeReports().filter(rp => !REPORTS[rp.type].quiet).map(rp => { const m = G.nearest(n.route.geom, n.route.cum, rp.ll, 0, n.route.geom.length - 2); return m.d < 45 ? { rp, s: m.s } : null; }).filter(Boolean);
   }
   function navAlerts(s) {
     const n = S.nav;
@@ -541,6 +554,7 @@
     if (!((f.speed || 0) > 2.5) || typeof f.heading !== 'number') { if (S.alertRp) setAlert(null); return; }
     let show = null;
     for (const rp of activeReports()) {
+      if (REPORTS[rp.type].quiet) continue;
       const d = G.hav(f.ll, rp.ll);
       if (d > 450 || Math.abs(G.angDiff(f.heading, G.bearing(f.ll, rp.ll))) > 50) continue;
       if (!S.freeAlerted[rp.id]) { S.freeAlerted[rp.id] = 1; say(REPORTS[rp.type].said + ' à ' + F.say(d) + (rp.note ? '. ' + rp.note : '')); }
@@ -822,7 +836,7 @@
   }
   // réglages du calcul : péages, autoroutes, et les routes que tu as signalées fermées
   function routeOpts(extra) {
-    const closed = activeReports().filter(r => r.type === 'closed').map(r => r.ll);
+    const closed = activeReports().filter(r => r.type === 'closed' || r.type === 'oneway').map(r => r.ll); // routes fermées et sens interdits : jamais empruntés
     return Object.assign({ avoidTolls: db.set.tolls, avoidHighways: db.set.hw, avoid: closed }, extra || {});
   }
   function wxUI() {
@@ -1089,7 +1103,7 @@
     return h;
   }
   function vReport() {
-    return head('Que se passe-t-il ?', S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + '<label class="repnote-f" for="rep-note">Commentaire (facultatif)<input id="rep-note" type="text" maxlength="80" enterkeyhint="done" autocomplete="off" placeholder="Ex. : voie de droite, gros trou…"></label><p class="note">Écris ton commentaire si tu veux, puis touche le type de signalement.</p><div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
+    return head('Que se passe-t-il ?', S.aiming ? 'Fais glisser la carte pour mettre la croix sur l’endroit exact, puis choisis le type.' : S.pos ? 'Le signalement est posé à ta position.' : 'Le signalement est posé au centre de la carte.') + (!S.aiming && !S.nav && S.mode === 'live' ? '<button type="button" class="btn aimbtn" data-act="aim">' + ic('pin') + 'Viser un autre endroit sur la carte</button>' : '') + '<label class="repnote-f" for="rep-note">Commentaire (facultatif)<input id="rep-note" type="text" maxlength="80" enterkeyhint="done" autocomplete="off" placeholder="Ex. : voie de droite, gros trou…"></label><p class="note">Écris ton commentaire si tu veux, puis touche le type de signalement.</p><div class="repgrid">' + Object.keys(REPORTS).map(k => '<button type="button" class="rep" data-act="rep" data-k="' + k + '">' + J.signs[k] + '<span>' + REPORTS[k].label + '</span></button>').join('') + '</div>';
   }
   function vRep() {
     const rp = S.rep;
@@ -1152,7 +1166,7 @@
       case 'route': S.routeSeq++; S.loading = false; clearRoute(); if (S.place) { setDest(S.place.ll); go('place'); } else { setDest(null); go('home'); } break;
       case 'pois': closePois(); break;
       case 'arrived': S.arrived = null; S.place = null; setDest(null); go('home'); break;
-      case 'report': case 'rep': case 'settings': case 'about': S.wipe = false; go(S.nav ? 'nav' : S.back === 'place' && !S.place ? 'home' : S.back === 'pois' && !S.poi ? 'home' : S.back || 'home'); break;
+      case 'report': case 'rep': case 'settings': case 'about': S.wipe = false; S.aiming = false; placeAim(); go(S.nav ? 'nav' : S.back === 'place' && !S.place ? 'home' : S.back === 'pois' && !S.poi ? 'home' : S.back || 'home'); break;
       default: go('home');
     }
   }
@@ -1208,9 +1222,15 @@
     voice() { db.set.voice = !db.set.voice; save(); if (!db.set.voice) { try { speechSynthesis.cancel(); } catch (e) { /* rien */ } } else say('Voix activée'); render(); },
     'sim-pause'() { if (S.sim) { S.sim.paused = !S.sim.paused; render(); } },
     'sim-speed'() { if (S.sim) { S.sim.mult = S.sim.mult >= 4 ? 1 : S.sim.mult * 2; render(); } },
-    report() { S.back = S.view === 'place' || S.view === 'pois' ? S.view : 'home'; go('report'); },
+    report() {
+      S.back = S.view === 'place' || S.view === 'pois' ? S.view : 'home';
+      // par défaut à ma position, comme dans Waze ; sans position connue, on vise avec la croix
+      S.aiming = !!map && !S.nav && !S.pos;
+      go('report'); placeAim();
+    },
+    aim() { S.aiming = true; unfollow(); render(); placeAim(); },
     rep(el) {
-      const type = el.dataset.k, p = S.pos ? (S.pos.show || S.pos.ll) : center();
+      const type = el.dataset.k, p = S.aiming && S.view === 'report' ? aimLL() : S.pos ? (S.pos.show || S.pos.ll) : center();
       const rp = { id: 'r' + Date.now().toString(36), type, ll: [+p[0].toFixed(6), +p[1].toFixed(6)], t: Date.now() };
       const noteEl = $('#rep-note'), note = noteEl ? noteEl.value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
       if (note) rp.note = note;
@@ -1219,8 +1239,9 @@
       S.freeAlerted[rp.id] = 2;
       if (S.nav) { S.nav.alerted[rp.id] = 2; indexReports(); }
       if (S.view === 'report') close(); // posé à la voix : on reste sur l'écran en cours
-      if (type === 'closed' && S.nav && S.pos) reroute(S.pos);
-      toast(REPORTS[type].said + ' ici' + (sharing() ? ', partagé avec les autres utilisateurs' : S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
+      if ((type === 'closed' || type === 'oneway') && S.nav && S.pos) reroute(S.pos);
+      S.aiming = false; placeAim();
+      toast(REPORTS[type].said + (type === 'oneway' ? ' : tes trajets ne passeront plus par là' : ' ici') + (REPORTS[type].local ? '' : sharing() ? ', partagé avec les autres utilisateurs' : S.mode === 'live' ? ', gardé sur cet appareil' : '') + '.');
     },
     'rep-yes'() { if (S.rep) { S.rep.t = Date.now(); save(); voteShared(S.rep, true); toast('Merci, signalement confirmé.'); } close(); },
     'rep-no'() { if (S.rep) dropReport(S.rep); S.rep = null; toast('Signalement retiré.'); close(); },
@@ -1299,7 +1320,7 @@
     // Téléphone tourné : on recale tout (panneaux, carte). Sur iPhone, une appli installée peut garder l'ancienne
     // géométrie quelques instants après la rotation, et les boutons ne répondent plus là où on les voit : on recale donc
     // plusieurs fois de suite, et on remet la page tout en haut.
-    const settle = () => { syncInsets(); try { window.scrollTo(0, 0); } catch (e) { /* rien */ } if (map) { try { map.resize(); } catch (e) { /* carte pas prête */ } } };
+    const settle = () => { syncInsets(); placeAim(); try { window.scrollTo(0, 0); } catch (e) { /* rien */ } if (map) { try { map.resize(); } catch (e) { /* carte pas prête */ } } };
     const turned = () => { settle(); setTimeout(settle, 350); setTimeout(settle, 1000); };
     window.addEventListener('resize', turned);
     window.addEventListener('orientationchange', turned);

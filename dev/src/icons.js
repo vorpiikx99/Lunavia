@@ -58,7 +58,8 @@ J.signs = (function () {
     danger: tri('<path d="M20 12.500v9.500" stroke="#15130B" stroke-width="3.400" stroke-linecap="round"/><circle cx="20" cy="27.200" r="2" fill="#15130B"/>'),
     works: tri('<path d="M20 11.500l5.300 16H14.700z" fill="#15130B"/><path d="M12.300 28.800h15.400" stroke="#15130B" stroke-width="2.600" stroke-linecap="round"/><path d="M17.800 18.800h4.400M16.500 23h7" stroke="#F7B500" stroke-width="1.700"/>'),
     control: '<svg class="sg" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" fill="#0F4C8A" stroke="#fff" stroke-width="2"/><path d="M18 8.500l7.500 2.800v5.600c0 4.600-3 8.300-7.500 10.200-4.500-1.900-7.500-5.600-7.500-10.200v-5.600z" fill="none" stroke="#fff" stroke-width="2.200" stroke-linejoin="round"/><path d="M14.500 17.600l2.600 2.600 4.400-4.800" fill="none" stroke="#fff" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    closed: '<svg class="sg" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" fill="#C1121C" stroke="#fff" stroke-width="2"/><rect x="8.500" y="15" width="19" height="6" rx="1" fill="#fff"/></svg>'
+    closed: '<svg class="sg" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" fill="#C1121C" stroke="#fff" stroke-width="2"/><circle cx="18" cy="18" r="10" fill="#fff"/></svg>',
+    oneway: '<svg class="sg" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" fill="#C1121C" stroke="#fff" stroke-width="2"/><rect x="8.500" y="15" width="19" height="6" rx="1" fill="#fff"/></svg>'
   };
 })();
 

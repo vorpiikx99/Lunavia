@@ -137,8 +137,7 @@ h2,h3,p{margin:0}
 #speedo span{font:600 10px/1 var(--font);opacity:.85}
 #speedo.over{background:var(--red)}
 #limit{width:50px;height:50px;border-radius:50%;background:#fff;border:6px solid #C1121C;box-sizing:border-box;color:#111;display:grid;place-items:center;font:700 21px/1 var(--cond);box-shadow:var(--shadow-s)}
-/* limitation estimée d'après le type de route (panneau inconnu de la carte) : cercle gris, en pointillés */
-#limit.est{border:4px dashed #7A828C;color:#3B424B}
+/* limitation estimée d'après le type de route : même panneau rouge (elle ne déclenche simplement pas le bip) */
 #attrib{position:fixed;z-index:5;left:max(16px, env(safe-area-inset-left, 0px));bottom:calc(var(--sheet-h, 0px) + 6px);display:flex;align-items:center;gap:6px;max-width:calc(100% - 100px)}
 #attrib .ai{flex:none;width:22px;height:22px;padding:0;border-radius:50%;border:1px solid var(--line);background:color-mix(in srgb, var(--surface) 88%, transparent);color:var(--muted);font:italic 700 13px/20px Georgia,'Times New Roman',serif;text-align:center;cursor:pointer;opacity:.8}
 #attrib .at{display:none;font:500 10.5px/1.25 var(--font);color:var(--ink);background:color-mix(in srgb, var(--surface) 88%, transparent);padding:3px 7px;border-radius:6px}
@@ -375,3 +374,15 @@ a.btn{text-decoration:none}
 
 /* plein écran sur iPhone : la carte passe sous l'heure et la batterie ; un léger dégradé garde ces indications lisibles */
 #app::before{content:"";position:fixed;left:0;right:0;top:0;height:calc(env(safe-area-inset-top, 0px) * 1.25);z-index:4;pointer-events:none;background:linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,0))}
+
+/* croix de visée : l'endroit où sera posé le signalement (la carte glisse dessous) */
+#aim{position:fixed;z-index:4;width:34px;height:34px;margin:-17px 0 0 -17px;pointer-events:none}
+#aim span{position:absolute;inset:0;border:3px solid #C1121C;border-radius:50%;box-shadow:0 0 0 2px #fff}
+#aim::before,#aim::after{content:"";position:absolute;background:#C1121C;box-shadow:0 0 0 1px #fff}
+#aim::before{left:15.5px;top:-8px;width:3px;height:50px}
+#aim::after{top:15.5px;left:-8px;height:3px;width:50px}
+.aimbtn{width:100%;justify-content:center;margin:2px 0 4px}
+.aim::before{left:15.5px;top:-8px;width:3px;height:50px}
+.aim::after{top:15.5px;left:-8px;height:3px;width:50px}
+/* « Sens interdit » est permanent : il prend toute la largeur, sous les signalements passagers */
+.repgrid [data-k="oneway"]{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:10px}
