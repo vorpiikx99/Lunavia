@@ -199,10 +199,23 @@
     }
     map.setStyle(st, { diff: false });
   }
+  /* Mentions des sources de la carte. La licence d'OpenStreetMap les exige, mais permet de les replier : elles s'affichent
+     cinq secondes à l'ouverture (ou jusqu'au premier geste sur la carte), puis se rangent derrière un petit bouton « i ». */
+  let attrT = 0;
   function attrib() {
     const el = $('#attrib');
-    if (S.mode === 'demo') { el.textContent = 'Carte de démonstration'; return; }
-    el.innerHTML = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '') + (trafficOn() ? ' · Trafic © TomTom' : '');
+    const txt = S.mode === 'demo' ? 'Carte de démonstration' : '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '') + (trafficOn() ? ' · Trafic © TomTom' : '');
+    el.innerHTML = '<button type="button" class="ai" data-act="attr" aria-label="Sources de la carte" aria-expanded="' + el.classList.contains('open') + '">i</button><span class="at">' + txt + '</span>';
+  }
+  function attrShow(ms) {
+    const el = $('#attrib');
+    el.classList.add('open'); const b = el.querySelector('.ai'); if (b) b.setAttribute('aria-expanded', 'true');
+    clearTimeout(attrT); attrT = setTimeout(attrHide, ms || 5000);
+  }
+  function attrHide() {
+    clearTimeout(attrT);
+    const el = $('#attrib'); if (!el.classList.contains('open')) return;
+    el.classList.remove('open'); const b = el.querySelector('.ai'); if (b) b.setAttribute('aria-expanded', 'false');
   }
   function mk(html, cls, opts) {
     const el = document.createElement('div');
@@ -1098,7 +1111,7 @@
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version __VERSION__.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Trafic : TomTom. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version __VERSION__.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -1189,6 +1202,7 @@
     sim() { startNav(true); },
     // bouton palette : carte claire ou noir doux ; le choix est gardé pour les prochaines ouvertures
     theme() { const next = isDark() ? 'light' : 'dark'; db.set.theme = next; save(); document.documentElement.setAttribute('data-theme', next); themeUI(); toast(next === 'dark' ? 'Carte en noir doux' : 'Carte claire'); },
+    attr() { if ($('#attrib').classList.contains('open')) attrHide(); else attrShow(8000); },
     mic() { listen(); },
     stop() { if (!S.nav) return; endNav(); if (S.routes.length && S.dest) { go('route'); drawRoutes(true); } else { clearRoute(); setDest(null); go('home'); } },
     voice() { db.set.voice = !db.set.voice; save(); if (!db.set.voice) { try { speechSynthesis.cancel(); } catch (e) { /* rien */ } } else say('Voix activée'); render(); },
@@ -1308,7 +1322,7 @@
   }
   function ready() {
     (S.upd || Promise.resolve()).then(hideSplash);
-    attrib(); zoomClasses(); northUI();
+    attrib(); attrShow(5000); zoomClasses(); northUI();
     if (S.mode === 'demo') {
       D.labels.forEach(l => mk(esc(l.text), 'lbl ' + l.cls, l.rot != null ? { rotation: l.rot, rotationAlignment: 'map', pitchAlignment: 'map' } : {}).setLngLat(l.ll).addTo(map));
       onFix({ ll: D.start.ll, acc: 5, speed: 0, heading: D.start.heading, t: Date.now(), sim: true }, true);
@@ -1420,6 +1434,7 @@
     map.once('load', first);
     map.on('rotate', northUI); map.on('pitch', northUI); map.on('zoom', zoomClasses);
     ['dragstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) unfollow(); }));
+    ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'].forEach(ev => map.on(ev, e => { if (e.originalEvent) attrHide(); }));
     // pendant qu'un doigt est sur la carte, elle ne bouge pas toute seule
     const cv = map.getCanvasContainer();
     ['touchstart', 'mousedown'].forEach(ev => cv.addEventListener(ev, () => { AN.touch = true; }, { passive: true }));

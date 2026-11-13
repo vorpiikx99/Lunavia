@@ -46,11 +46,11 @@ const head = [
   '<title>Lunavia</title>',
   '<meta name="generator" content="jalon:carte">', // signature de la page, lue par sw.js (« bon voisinage »)
   '<meta name="description" content="Lunavia, la carte qui réunit le meilleur des applis de navigation : recherche, itinéraires, guidage vocal, signalements, prix des carburants.">',
-  '<meta name="theme-color" content="#0F4C8A">',
+  '<meta name="theme-color" content="#0B0420">',
   '<meta name="mobile-web-app-capable" content="yes">',
   '<meta name="apple-mobile-web-app-capable" content="yes">',
   '<meta name="apple-mobile-web-app-title" content="Lunavia">',
-  '<meta name="apple-mobile-web-app-status-bar-style" content="default">',
+  '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">', // plein écran : la carte passe sous la barre d'état
   '<link rel="manifest" href="manifest.webmanifest">',
   '<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">',
   '<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">',

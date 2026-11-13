@@ -150,14 +150,27 @@ http.createServer(async (req, res) => {
       res.writeHead(404); return res.end();
     }
     if (host === 'photon.komoot.io' && flags.photonSlow && !p.startsWith('/reverse')) await new Promise(r => setTimeout(r, flags.photonSlow));
+    if (host === 'photon.komoot.io' && !p.startsWith('/reverse') && /tabac/i.test(q.get('q') || '')) return json(res, { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [4.8952, 52.3702] }, properties: { osm_type: 'N', osm_id: 77, osm_key: 'shop', osm_value: 'tobacco', name: 'Tabac de la Gare', city: 'Amsterdam', postcode: '1012', country: 'Nederland' } }] });
     if (host === 'photon.komoot.io') { if (flags.photonDown) { res.writeHead(503); return res.end(); } return json(res, p.startsWith('/reverse') ? photonReverse(q) : photonSearch(q)); }
     if (host === 'data.geopf.fr') {
+      if (p.startsWith('/geocodage/search') && q.get('type') === 'municipality') return json(res, { type: 'FeatureCollection', features: /marcel/i.test(q.get('q') || '') ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [5.2990, 52.1495] }, properties: { label: 'Saint-Marcel', name: 'Saint-Marcel', city: 'Saint-Marcel', type: 'municipality', score: 0.82 } }] : [] });
       if (p.startsWith('/geocodage')) return json(res, { type: 'FeatureCollection', features: /oude|gracht/i.test(q.get('q') || '') ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: [5.1214, 52.0907] }, properties: { label: '12 Oudegracht 3511 Utrecht', score: 0.9, housenumber: '12', id: '99_0001_00012', name: '12 Oudegracht', postcode: '3511', citycode: '99000', city: 'Utrecht', context: '99, Banc', type: 'housenumber', street: 'Oudegracht' } }] : [] });
       res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(ORTHO);
     }
     if (host === 'overpass-api.de' || host === 'overpass.private.coffee') {
       if (flags.overpassDown) { res.writeHead(429); return res.end('rate limited'); }
       const b = await body(req), ql = decodeURIComponent((b.match(/data=([^&]*)/) || [])[1] || q.get('data') || '');
+      if (/"shop"="tobacco"/.test(ql)) {
+        const m = ql.match(/around:(\d+),([\d.\-]+),([\d.\-]+)/), r = +m[1], c = [+m[3], +m[2]], R = 6371000, rad = Math.PI / 180;
+        const far = (a, b) => { const x = (b[0] - a[0]) * rad * Math.cos((a[1] + b[1]) / 2 * rad), y = (b[1] - a[1]) * rad; return Math.sqrt(x * x + y * y) * R; };
+        const T = [
+          { type: 'node', id: 9001, lat: 52.0950, lon: 5.1150, tags: { shop: 'tobacco', name: 'Le Balto', 'addr:street': 'Biltstraat', 'addr:housenumber': '4', 'addr:city': 'Utrecht' } },
+          { type: 'node', id: 9002, lat: 52.0800, lon: 5.1300, tags: { amenity: 'bar', tobacco: 'yes', 'addr:city': 'Utrecht' } },
+          { type: 'node', id: 9003, lat: 52.0370, lon: 5.1900, tags: { shop: 'tobacco', name: 'Tabac du Canal', 'addr:city': 'Bunnik' } },
+          { type: 'node', id: 9004, lat: 52.1500, lon: 5.3000, tags: { shop: 'tobacco', name: 'Tabac Saint-Marcel', 'addr:city': 'Saint-Marcel' } }
+        ];
+        return json(res, { elements: T.filter(e => far(c, [e.lon, e.lat]) <= r) });
+      }
       if (/speed_camera/.test(ql)) return json(res, { elements: flags.camLat ? [{ type: 'node', id: 4242, lat: flags.camLat, lon: flags.camLon }] : [] });
       return json(res, overpass(ql));
     }
@@ -195,6 +208,15 @@ http.createServer(async (req, res) => {
       if (p === '/rest/v1/rpc/vote' && req.method === 'POST') { const o = JSON.parse(await body(req)), r = SBROWS.find(x => x.id === o.rid); if (r) { if (o.still) r.yes++; else r.no++; } res.writeHead(204, { 'access-control-allow-origin': '*' }); return res.end(); }
       if (p === '/_rows') { if (req.method === 'POST') { const o = JSON.parse(await body(req)); if (o.reset) SBROWS.length = 0; if (o.add) SBROWS.push(Object.assign({ id: 'srv-' + (SBROWS.length + 1), created_at: new Date().toISOString(), yes: 0, no: 0, note: null }, o.add)); } return json(res, SBROWS); }
       return json(res, { message: 'inconnu' }, 404);
+    }
+    if (host === 'recherche-entreprises.api.gouv.fr' && p === '/near_point') {
+      const lat = +q.get('lat'), lon = +q.get('long'), near = Math.abs(lat - 52.0894) < 0.02 && Math.abs(lon - 5.11) < 0.03;
+      if (!near || !/47\.26Z/.test(q.get('activite_principale') || '')) return json(res, { results: [], total_results: 0 });
+      return json(res, { total_results: 1, results: [{ nom_complet: 'JEAN DUPONT', matching_etablissements: [
+        { siret: 'a1', adresse: '3 OUDEGRACHT 3511 UTRECHT', latitude: '52.0905', longitude: '5.1060', liste_enseignes: null, nom_commercial: null, etat_administratif: 'A' },
+        { siret: 'a2', adresse: '4 BILTSTRAAT UTRECHT', latitude: '52.0952', longitude: '5.1152', liste_enseignes: ['LE BALTO'], nom_commercial: null, etat_administratif: 'A' },
+        { siret: 'a3', adresse: '9 NEUDE UTRECHT', latitude: '52.0920', longitude: '5.1200', liste_enseignes: ['TABAC FERME'], nom_commercial: null, etat_administratif: 'F' }
+      ] }] });
     }
     if (host === 'recherche-entreprises.api.gouv.fr') { // annuaire des entreprises : la réponse réelle pour « cedeo » dans l'Aude
       if (!/cedeo/i.test(q.get('q') || '')) return json(res, { results: [], total_results: 0 });

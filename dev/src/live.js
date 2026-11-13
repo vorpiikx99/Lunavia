@@ -93,7 +93,7 @@ J.live = (function () {
   }
   const nrm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   async function photon(q, near, signal) {
-    const bias = near ? '&lat=' + near[1].toFixed(4) + '&lon=' + near[0].toFixed(4) + '&zoom=11&location_bias_scale=0.4' : '';
+    const bias = near ? '&lat=' + near[1].toFixed(4) + '&lon=' + near[0].toFixed(4) + '&zoom=12&location_bias_scale=0.2' : '';
     const j = await getJSON('https://photon.komoot.io/api/?q=' + encodeURIComponent(q) + '&lang=fr&limit=8' + bias, { signal }, 6000);
     return (j.features || []).map(photonPlace).filter(Boolean);
   }
@@ -118,8 +118,10 @@ J.live = (function () {
     const hit = SEEN.get(key);
     if (hit && Date.now() - hit.t < 300000) return hit.list;
     // lieux d'abord ceux qui sont près de moi, puis les commerces de l'annuaire officiel proches, puis le reste
+    const gq = !addr && near ? generic(q) : null;
     const merge = (places, adr, ent) => {
       adr = (adr || []).filter(p => p.score >= (addr ? 0.4 : 0.6)); places = places || []; ent = ent || [];
+      if (gq) return mergeGen(places, adr, ent);
       const dist = p => (near ? G.hav(near, p.ll) : 0), close = p => dist(p) < 50000;
       const nearP = places.filter(close), farP = places.filter(p => !close(p)), nearE = ent.filter(close).slice(0, 4), farE = ent.filter(p => !close(p)).slice(0, 2);
       const list = addr ? adr.slice(0, 4).concat(places, ent.slice(0, 3)) : nearP.slice(0, 5).concat(nearE, adr.slice(0, 2), nearP.slice(5), farP, farE), out = [];
@@ -127,16 +129,26 @@ J.live = (function () {
       return out.slice(0, 9);
     };
     const signal = opts && opts.signal, part = opts && opts.onPartial;
-    let places = null, adr = null, ent = null, done = 0;
-    const tell = () => { if (part && done < 3) { const l = merge(places, adr, ent); if (l.length) part(l); } };
+    let places = null, adr = null, ent = null, done = 0, gen = null, genOk = false, genAt = near;
+    // recherche par type de lieu : les plus proches d'abord, puis ce que trouvent les autres sources
+    const mergeGen = (pl, ad, en) => {
+      const out = (gen || []).slice(0, 9), far = pl.concat(en).filter(p => !out.some(o => G.hav(o.ll, p.ll) < 120)).sort((a, b) => G.hav(genAt, a.ll) - G.hav(genAt, b.ll));
+      return out.concat(far).slice(0, 12);
+    };
+    const tell = () => { if (part && done < 4) { const l = merge(places, adr, ent); if (l.length) part(l); } };
+    const d = !gq ? Promise.resolve(false) : (async () => {
+      let c = near;
+      if (gq.rest) { const tc = await townCenter(gq.rest, near, signal).catch(() => null); if (!tc) return false; c = tc.ll; }
+      genAt = c; gen = await nearbyOf(gq.g, c, signal); return true;
+    })().then(v => { genOk = !!v; done++; tell(); return v; }, () => { done++; return false; });
     const a = photon(q, near, signal).then(v => { places = v; done++; tell(); return true; }, () => { done++; return false; });
     const b = (nrm(q).length >= 3 ? ban(q, near, signal) : Promise.resolve([])).then(v => { adr = v; done++; tell(); return true; }, () => { done++; return false; });
-    const c = (!addr && nrm(q).length >= 3 && near && inFrance(near) ? firms(q, near, signal) : Promise.resolve([])).then(v => { ent = v; done++; tell(); return true; }, () => { done++; return false; });
-    const ok = await Promise.all([a, b, c]);
+    const c = (!addr && !gq && nrm(q).length >= 3 && near && inFrance(near) ? firms(q, near, signal) : Promise.resolve([])).then(v => { ent = v; done++; tell(); return true; }, () => { done++; return false; });
+    const ok = await Promise.all([a, b, c, d]);
     if (signal && signal.aborted) throw new Error('abandon');
-    if (!ok[0] && !ok[1] && !(ok[2] && ent && ent.length)) throw new Error('search');
+    if (!ok[0] && !ok[1] && !(ok[2] && ent && ent.length) && !(genOk && gen && gen.length)) throw new Error('search');
     const out = merge(places, adr, ent);
-    if (ok[0]) { SEEN.set(key, { t: Date.now(), list: out }); if (SEEN.size > 60) SEEN.delete(SEEN.keys().next().value); }
+    if (ok[0] || genOk) { SEEN.set(key, { t: Date.now(), list: out }); if (SEEN.size > 60) SEEN.delete(SEEN.keys().next().value); }
     return out;
   }
   /* Commerces et entreprises : l'annuaire officiel (API Recherche d'entreprises, données Sirene). Il connaît des enseignes
@@ -168,6 +180,150 @@ J.live = (function () {
     })));
     const seen = new Set();
     return out.filter(p => (seen.has(p.id) ? false : seen.add(p.id))).sort((x, y) => G.hav(near, x.ll) - G.hav(near, y.ll)).slice(0, 8);
+  }
+
+  /* Recherches « génériques » (tabac, boulangerie, pharmacie…). Le moteur de recherche de lieux ne trouve que les endroits
+     dont le NOM contient le mot tapé : un bureau de tabac qui s'appelle « Le Balto » lui échappe, et il préfère les grandes
+     villes. Pour ces mots-là on cherche donc par TYPE de commerce, autour de soi (ou autour de la ville tapée après le mot),
+     dans OpenStreetMap et dans l'annuaire officiel des entreprises, et on classe du plus proche au plus loin. */
+  const GEN = [
+    [['tabac', 'bureau de tabac', 'buraliste', 'bar tabac', 'tabac presse'], 'Tabac', 'shop', ['nwr["shop"="tobacco"]', 'nwr["tobacco"="yes"]', 'nwr["name"~"tabac",i]["shop"]', 'nwr["name"~"tabac",i]["amenity"~"^(bar|cafe)$"]'], ['47.26Z']],
+    [['boulangerie', 'boulanger', 'pain', 'boulangerie patisserie'], 'Boulangerie', 'shop', ['nwr["shop"="bakery"]'], ['10.71C']],
+    [['patisserie'], 'Pâtisserie', 'shop', ['nwr["shop"~"^(pastry|bakery)$"]'], ['10.71D']],
+    [['pharmacie', 'pharmacien'], 'Pharmacie', 'pharma', ['nwr["amenity"="pharmacy"]'], ['47.73Z']],
+    [['medecin', 'docteur', 'generaliste', 'medecin generaliste', 'cabinet medical', 'maison de sante'], 'Médecin', 'pharma', ['nwr["amenity"="doctors"]', 'nwr["healthcare"="doctor"]', 'nwr["healthcare"="centre"]'], ['86.21Z']],
+    [['dentiste'], 'Dentiste', 'pharma', ['nwr["amenity"="dentist"]', 'nwr["healthcare"="dentist"]'], ['86.23Z']],
+    [['kine', 'kinesitherapeute', 'kinesitherapie'], 'Kinésithérapeute', 'pharma', ['nwr["healthcare"="physiotherapist"]'], ['86.90E']],
+    [['infirmier', 'infirmiere', 'cabinet infirmier'], 'Infirmier', 'pharma', ['nwr["healthcare"="nurse"]'], ['86.90D']],
+    [['veterinaire', 'veto'], 'Vétérinaire', 'pharma', ['nwr["amenity"="veterinary"]'], ['75.00Z']],
+    [['hopital', 'urgences', 'clinique'], 'Hôpital', 'pharma', ['nwr["amenity"~"^(hospital|clinic)$"]'], []],
+    [['banque'], 'Banque', 'shop', ['nwr["amenity"="bank"]'], []],
+    [['distributeur', 'distributeur de billets', 'dab', 'retrait', 'retrait argent', 'atm'], 'Distributeur', 'shop', ['nwr["amenity"="atm"]', 'nwr["amenity"="bank"]["atm"="yes"]'], []],
+    [['poste', 'la poste', 'bureau de poste', 'relais poste'], 'La Poste', 'shop', ['nwr["amenity"="post_office"]'], []],
+    [['supermarche', 'hypermarche', 'courses', 'grande surface'], 'Supermarché', 'shop', ['nwr["shop"~"^(supermarket|hypermarket)$"]'], []],
+    [['superette', 'epicerie', 'alimentation', 'petit commerce', 'proxi'], 'Épicerie', 'shop', ['nwr["shop"~"^(convenience|grocery)$"]'], ['47.11B']],
+    [['boucherie', 'boucher', 'charcuterie'], 'Boucherie', 'shop', ['nwr["shop"~"^(butcher|deli)$"]'], ['47.22Z']],
+    [['primeur', 'fruits et legumes'], 'Primeur', 'shop', ['nwr["shop"="greengrocer"]'], ['47.21Z']],
+    [['poissonnerie', 'poissonnier'], 'Poissonnerie', 'shop', ['nwr["shop"="seafood"]'], ['47.23Z']],
+    [['fromagerie', 'fromager'], 'Fromagerie', 'shop', ['nwr["shop"="cheese"]'], []],
+    [['cave', 'caviste', 'cave a vin', 'vin', 'domaine viticole', 'cave cooperative'], 'Cave', 'shop', ['nwr["shop"~"^(wine|alcohol)$"]', 'nwr["craft"="winery"]'], ['47.25Z']],
+    [['coiffeur', 'coiffure', 'barbier', 'coiffeuse'], 'Coiffeur', 'shop', ['nwr["shop"="hairdresser"]'], ['96.02A']],
+    [['institut de beaute', 'esthetique', 'estheticienne', 'onglerie'], 'Institut de beauté', 'shop', ['nwr["shop"~"^(beauty|cosmetics)$"]'], ['96.02B']],
+    [['fleuriste', 'fleurs'], 'Fleuriste', 'shop', ['nwr["shop"="florist"]'], ['47.76Z']],
+    [['opticien', 'lunettes'], 'Opticien', 'shop', ['nwr["shop"="optician"]'], ['47.78A']],
+    [['presse', 'journaux', 'maison de la presse', 'marchand de journaux'], 'Presse', 'shop', ['nwr["shop"="newsagent"]', 'nwr["shop"="tobacco"]'], ['47.62Z']],
+    [['librairie'], 'Librairie', 'shop', ['nwr["shop"="books"]'], ['47.61Z']],
+    [['garage', 'garagiste', 'mecanicien', 'reparation auto', 'reparation voiture'], 'Garage', 'shop', ['nwr["shop"="car_repair"]'], ['45.20A']],
+    [['controle technique'], 'Contrôle technique', 'shop', ['nwr["amenity"="vehicle_inspection"]', 'nwr["name"~"contr[oô]le technique",i]'], ['71.20A']],
+    [['lavage', 'lavage auto', 'station de lavage', 'lavage voiture'], 'Lavage auto', 'shop', ['nwr["amenity"="car_wash"]'], []],
+    [['pneu', 'pneus', 'pneumatique'], 'Pneus', 'shop', ['nwr["shop"="tyres"]'], []],
+    [['laverie', 'laverie automatique'], 'Laverie', 'shop', ['nwr["shop"="laundry"]'], ['96.01B']],
+    [['pressing'], 'Pressing', 'shop', ['nwr["shop"="dry_cleaning"]'], ['96.01B']],
+    [['bricolage', 'magasin de bricolage'], 'Bricolage', 'shop', ['nwr["shop"~"^(doityourself|hardware)$"]'], ['47.52B']],
+    [['quincaillerie'], 'Quincaillerie', 'shop', ['nwr["shop"="hardware"]'], ['47.52A']],
+    [['jardinerie', 'pepiniere'], 'Jardinerie', 'shop', ['nwr["shop"="garden_centre"]'], []],
+    [['animalerie'], 'Animalerie', 'shop', ['nwr["shop"="pet"]'], []],
+    [['vetements', 'magasin de vetements'], 'Vêtements', 'shop', ['nwr["shop"="clothes"]'], []],
+    [['chaussures'], 'Chaussures', 'shop', ['nwr["shop"="shoes"]'], []],
+    [['telephonie', 'telephone', 'operateur'], 'Téléphonie', 'shop', ['nwr["shop"~"^(mobile_phone|telecommunication)$"]'], []],
+    [['restaurant', 'resto', 'restau', 'manger'], 'Restaurant', 'food', ['nwr["amenity"="restaurant"]'], []],
+    [['pizza', 'pizzeria'], 'Pizzeria', 'food', ['nwr["amenity"~"^(restaurant|fast_food)$"]["cuisine"~"pizza"]', 'nwr["name"~"pizz",i]["amenity"~"^(restaurant|fast_food)$"]', 'nwr["vending"="pizza"]'], []],
+    [['kebab'], 'Kebab', 'food', ['nwr["amenity"~"^(restaurant|fast_food)$"]["cuisine"~"kebab"]', 'nwr["name"~"kebab",i]'], []],
+    [['burger', 'fast food', 'restauration rapide'], 'Restauration rapide', 'food', ['nwr["amenity"="fast_food"]'], []],
+    [['cafe', 'bar', 'bistrot', 'brasserie', 'pub'], 'Café', 'food', ['nwr["amenity"~"^(cafe|bar|pub)$"]'], []],
+    [['glacier', 'glace', 'glaces'], 'Glacier', 'food', ['nwr["amenity"="ice_cream"]', 'nwr["shop"="ice_cream"]'], []],
+    [['traiteur'], 'Traiteur', 'food', ['nwr["shop"="deli"]', 'nwr["craft"="caterer"]'], []],
+    [['hotel', 'hotels'], 'Hôtel', 'other', ['nwr["tourism"="hotel"]'], []],
+    [['chambre d hote', 'chambres d hotes', 'gite'], 'Hébergement', 'other', ['nwr["tourism"~"^(guest_house|chalet)$"]'], []],
+    [['camping'], 'Camping', 'other', ['nwr["tourism"="camp_site"]'], []],
+    [['aire de camping car', 'camping car'], 'Aire de camping-car', 'other', ['nwr["tourism"="caravan_site"]'], []],
+    [['station service', 'station essence', 'essence', 'carburant', 'gazole', 'diesel', 'station'], 'Station-service', 'fuel', ['nwr["amenity"="fuel"]'], []],
+    [['borne de recharge', 'recharge', 'borne electrique', 'borne'], 'Borne de recharge', 'charge', ['nwr["amenity"="charging_station"]'], []],
+    [['parking'], 'Parking', 'parking', ['nwr["amenity"="parking"]["access"!~"^(private|no|customers|permit)$"]'], []],
+    [['toilettes', 'wc', 'toilette'], 'Toilettes', 'other', ['nwr["amenity"="toilets"]'], []],
+    [['gendarmerie', 'police', 'commissariat'], 'Gendarmerie', 'other', ['nwr["amenity"="police"]'], []],
+    [['mairie'], 'Mairie', 'other', ['nwr["amenity"="townhall"]'], []],
+    [['ecole', 'college', 'lycee'], 'École', 'other', ['nwr["amenity"~"^(school|college)$"]'], []],
+    [['creche'], 'Crèche', 'other', ['nwr["amenity"~"^(kindergarten|childcare)$"]'], []],
+    [['eglise', 'chapelle'], 'Église', 'other', ['nwr["amenity"="place_of_worship"]["religion"="christian"]'], []],
+    [['cinema'], 'Cinéma', 'other', ['nwr["amenity"="cinema"]'], []],
+    [['piscine'], 'Piscine', 'other', ['nwr["leisure"~"^(swimming_pool|sports_centre|water_park)$"]["access"!~"^(private|no)$"]["sport"~"swimming"]', 'nwr["leisure"="water_park"]'], []],
+    [['salle de sport', 'fitness', 'musculation'], 'Salle de sport', 'other', ['nwr["leisure"="fitness_centre"]'], ['93.13Z']],
+    [['parc', 'jardin public'], 'Parc', 'other', ['nwr["leisure"="park"]'], []],
+    [['aire de jeux', 'jeux enfants'], 'Aire de jeux', 'other', ['nwr["leisure"="playground"]'], []],
+    [['plage'], 'Plage', 'other', ['nwr["natural"="beach"]'], []],
+    [['gare', 'gare sncf', 'train'], 'Gare', 'other', ['nwr["railway"~"^(station|halt)$"]'], []],
+    [['arret de bus', 'bus', 'abribus'], 'Arrêt de bus', 'other', ['node["highway"="bus_stop"]'], []],
+    [['marche', 'marche couvert'], 'Marché', 'shop', ['nwr["amenity"="marketplace"]'], []],
+    [['dechetterie', 'decheterie'], 'Déchetterie', 'other', ['nwr["amenity"="recycling"]["recycling_type"="centre"]'], []],
+    [['notaire'], 'Notaire', 'other', ['nwr["office"="notary"]'], ['69.10Z']],
+    [['agence immobiliere', 'immobilier'], 'Agence immobilière', 'other', ['nwr["office"="estate_agent"]'], ['68.31Z']]
+  ].map(([words, label, cat, osm, naf]) => ({ words: words.map(w => nrm(w)), label, cat, osm, naf }));
+  // le mot tapé correspond-il à un type de lieu ? (pluriel accepté, « le plus proche », « près de moi »… ignorés)
+  const FILL = /\b(le|la|les|un|une|des|du|de|d|au|aux|a|pres|proche|plus|proches|moi|cote|autour|ici|ouvert|ouverte|ouverts|svp|cherche|trouve|trouver|ou|est|il|y|en|dans|sur|vers|garde|nuit|24h|24|maintenant|aujourd|hui|ce|soir|matin)\b/g;
+  const sing = w => (w.length > 3 ? w.replace(/(s|x)$/, '') : w);
+  function generic(q) {
+    const raw = nrm(q).split(' ').filter(Boolean), words = raw.map(sing);
+    if (!words.length || words.length > 7) return null;
+    let best = null;
+    GEN.forEach(g => g.words.forEach(k => {
+      const kw = k.split(' ').map(sing);
+      if (kw.length > words.length || (best && kw.length <= best.n)) return;
+      for (let i = 0; i < kw.length; i++) if (words[i] !== kw[i]) return;
+      best = { g, n: kw.length };
+    }));
+    if (!best) return null;
+    const rest = raw.slice(best.n).join(' ').replace(FILL, ' ').replace(/\s+/g, ' ').trim();
+    return { g: best.g, rest };
+  }
+  // la ville tapée après le mot (« tabac st marcel ») : on cherche autour d'elle
+  async function townCenter(name, near, signal) {
+    const bias = near ? '&lat=' + near[1].toFixed(4) + '&lon=' + near[0].toFixed(4) : '';
+    const j = await getJSON('https://data.geopf.fr/geocodage/search?q=' + encodeURIComponent(name.replace(/\bst\b/g, 'saint').replace(/\bste\b/g, 'sainte').slice(0, 120)) + '&type=municipality&limit=3&index=address' + bias, { signal }, 4000);
+    const w = nrm(name).replace(/\bst\b/g, 'saint').split(' ').filter(x => x.length >= 3 && x !== 'saint' && x !== 'sainte')[0] || nrm(name);
+    const f = (j.features || []).find(x => x.properties && x.properties.score >= 0.5 && nrm(x.properties.city || x.properties.name).indexOf(w) >= 0);
+    return f ? { ll: f.geometry.coordinates.slice(0, 2), name: f.properties.city || f.properties.name } : null;
+  }
+  async function genOsm(g, c, r, signal) {
+    const at = '(around:' + r + ',' + c[1].toFixed(5) + ',' + c[0].toFixed(5) + ')';
+    const j = await overpass('[out:json][timeout:10];(' + g.osm.map(f => f + at + ';').join('') + ');out center tags 150;', 11000, signal);
+    return (j.elements || []).map(e => {
+      const p = poiPlace(e, ['fuel', 'charge', 'parking', 'food', 'shop', 'pharma'].indexOf(g.cat) >= 0 ? g.cat : 'shop');
+      if (!p) return null;
+      const t = e.tags || {};
+      if (!t.name && !t.brand) p.name = g.label === 'Tabac' && /^(bar|cafe|pub)$/.test(t.amenity || '') ? 'Bar-tabac' : g.label;
+      const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+      p.sub = [p.name !== g.label ? g.label : '', street, t['addr:city'] || ''].filter(Boolean).join(' · ') || g.label;
+      p.kind = ['fuel', 'charge', 'parking', 'food', 'shop', 'pharma'].indexOf(g.cat) >= 0 ? g.cat : 'other';
+      return p;
+    }).filter(Boolean);
+  }
+  async function genFirms(g, c, km, signal) {
+    if (!g.naf.length) return [];
+    const j = await getJSON('https://recherche-entreprises.api.gouv.fr/near_point?lat=' + c[1].toFixed(5) + '&long=' + c[0].toFixed(5) + '&radius=' + km + '&activite_principale=' + g.naf.join(',') + '&per_page=25&limite_matching_etablissements=10', { signal }, 6000);
+    const out = [];
+    (j.results || []).forEach(e => (e.matching_etablissements || []).forEach(m => {
+      const lat = parseFloat(m.latitude), lon = parseFloat(m.longitude);
+      if (m.etat_administratif !== 'A' || !isFinite(lat) || !isFinite(lon)) return;
+      const sign = (m.liste_enseignes || []).filter(Boolean)[0] || m.nom_commercial || '';
+      const adr = nice(String(m.adresse || '').replace(/\s+/g, ' ').trim()).replace(/ (De|Des|Du|La|Le|Les|Et|En|Sur|Sous|Aux|Au) /g, x => x.toLowerCase()).replace(/\b(Zi|Zac|Za|Zae|Rn|Rd|Cc) /g, x => x.toUpperCase());
+      // sans enseigne, on affiche le type de commerce plutôt que le nom légal (souvent celui d'une personne)
+      out.push({ id: 'e' + (m.siret || lat + ',' + lon), name: sign ? nice(sign) : g.label, sub: (sign ? g.label + ' · ' : '') + adr, ll: [lon, lat], kind: ['fuel', 'charge', 'parking', 'food', 'shop', 'pharma'].indexOf(g.cat) >= 0 ? g.cat : 'other', cat: g.cat, extra: { lines: adr ? [adr] : [] } });
+    }));
+    return out;
+  }
+  async function nearbyOf(g, c, signal) {
+    const run = async (r) => {
+      const res = await Promise.allSettled([genOsm(g, c, r, signal), genFirms(g, c, Math.round(r / 1000), signal)]);
+      if (res.every(x => x.status === 'rejected')) throw new Error('autour');
+      const osm = res[0].status === 'fulfilled' ? res[0].value : [], ent = res[1].status === 'fulfilled' ? res[1].value : [], out = osm.slice();
+      ent.forEach(p => { if (!out.some(o => G.hav(o.ll, p.ll) < 120)) out.push(p); }); // le même commerce vu par les deux sources
+      return out.sort((a, b) => G.hav(c, a.ll) - G.hav(c, b.ll));
+    };
+    let list = await run(6000);
+    if (list.length < 4) list = await run(20000);
+    if (list.length < 2) list = await run(45000);
+    return list.slice(0, 12);
   }
   async function reverse(ll) {
     try {
@@ -329,11 +485,11 @@ J.live = (function () {
 
   /* --- lieux utiles autour d'un point --- */
   const OVP = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
-  async function overpass(q, ms) {
+  async function overpass(q, ms, signal) {
     let err;
     for (const u of OVP) {
-      try { return await getJSON(u, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) }, ms || 14000); }
-      catch (e) { err = e; }
+      try { return await getJSON(u, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal }, ms || 14000); }
+      catch (e) { err = e; if (signal && signal.aborted) throw e; }
     }
     throw err;
   }
@@ -507,5 +663,5 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();

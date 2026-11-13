@@ -56,7 +56,9 @@ export async function open(opts = {}) {
     const req = route.request(), u = req.url();
     try {
       if (u === base || u.startsWith(base + '#') || u.startsWith(base + '?')) {
-        const html = kind === 'artifact' ? SKEL(rd('dist/jalon.html').toString('utf8')) : rd('dist/site/index.html').toString('utf8');
+        let html = kind === 'artifact' ? SKEL(rd('dist/jalon.html').toString('utf8')) : rd('dist/site/index.html').toString('utf8');
+        // iPhone simulé : Chrome ne connaît pas les marges de l'encoche, on les remplace par celles d'un iPhone récent
+        if (opts.notch) html = html.replace(/env\(safe-area-inset-top, 0px\)/g, '59px').replace(/env\(safe-area-inset-bottom, 0px\)/g, '34px');
         // l'aperçu dans Claude n'autorise que quelques hôtes de scripts et de polices : on reproduit ce cadre au plus près
         const headers = kind === 'artifact' && !opts.noCsp ? { 'content-security-policy': CSP } : {};
         return route.fulfill({ contentType: 'text/html; charset=utf-8', body: html, headers });
