@@ -8,6 +8,7 @@ J.ic = (function () {
     locate: '<circle cx="12" cy="12" r="6.8"/><circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none"/><path d="M12 2.5v2.7M12 18.8v2.7M2.5 12h2.7M18.8 12h2.7"/>',
     nav: '<path d="M12 3l7.2 17.5L12 16.6l-7.2 3.9z" fill="currentColor"/>',
     palette: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.9-1 1.5-2.1-.5-1.3.4-2.6 1.8-2.6h2.3A3.4 3.4 0 0 0 21 12.9 9 9 0 0 0 12 3z"/><circle cx="7.6" cy="12.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="9.7" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.2" cy="7.4" r="1.1" fill="currentColor" stroke="none"/>',
+    cube: '<path d="M12 2.800l8.300 4.600v9.200L12 21.200l-8.300-4.600V7.400z"/><path d="M3.700 7.400 12 12l8.300-4.600M12 12v9.200"/>',
     layers: '<path d="M12 3.5l8.5 4.7-8.5 4.7-8.5-4.7z"/><path d="M3.5 12.6l8.5 4.7 8.5-4.7"/><path d="M3.5 16.6l8.5 4.7 8.5-4.7"/>',
     star: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.8z"/>',
     starf: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.8z" fill="currentColor"/>',

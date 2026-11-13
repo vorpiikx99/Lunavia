@@ -34,7 +34,7 @@
 
   /* ---------- mémoire de l'appareil ---------- */
   const KEY = 'jalon.v1';
-  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '', share: true };
+  const DEFSET = { voice: true, beep: true, tolls: false, hw: false, conso: 6.5, prix: 1.75, fuel: 'gazole', zones: true, traffic: true, tkey: '', share: true, v3d: false };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { d = {}; }
@@ -121,6 +121,23 @@
     const wide = WIDE.matches;
     app.style.setProperty('--sheet-h', (wide || sheet.hidden ? 0 : sheet.offsetHeight) + 'px');
     app.style.setProperty('--sheet-w', (sheet.hidden ? -16 : sheet.offsetWidth) + 'px');
+    fitSide();
+  }
+  /* Boutons de droite : quand le panneau du bas est haut (choix du trajet, menu du guidage, petit écran), la colonne
+     pourrait monter jusque sous la barre du haut. Les boutons de style (couleur, photos, 3D) se rangent alors un à un ;
+     ils reviennent dès qu'il y a la place (et restent dans le menu Options pendant le guidage). */
+  function fitSide() {
+    const side = $('#side'), opt = ['#theme', '#layers', '#v3d'].map(x => $(x)).filter(Boolean);
+    opt.forEach(b => b.classList.remove('squeeze'));
+    const vis = el => !!el && !el.hidden && el.getClientRects().length > 0; // (offsetParent ne marche pas pour un élément fixe)
+    const topEl = S.nav ? $('#navsign') : $('#top');
+    if (!vis(side) || !vis(topEl)) return;
+    const t = topEl.getBoundingClientRect();
+    for (const b of opt) {
+      const r = side.getBoundingClientRect();
+      if (r.top >= t.bottom + 8 || r.left >= t.right || r.right <= t.left) break; // pas de chevauchement
+      if (vis(b)) b.classList.add('squeeze');
+    }
   }
   function pad() {
     const wide = WIDE.matches, H = mapEl.clientHeight || 600, Wd = mapEl.clientWidth || 360;
@@ -138,6 +155,10 @@
   /* ---------- carte : fond, calques de l'itinéraire, repères ---------- */
   // une fois le guidage lancé, le trajet passe en violet lumineux (sans halo : rien ne dépasse de la route)
   const COL = () => { const d = isDark(), c = d ? { line: '#4C9AF7', casing: '#0B2748', done: '#56616F', alt: '#5F7EA6', altc: '#27384F' } : { line: '#1E6FD9', casing: '#0B3D78', done: '#93A1B3', alt: '#A9C2E3', altc: '#6F8FBA' }; if (S.nav) { c.line = d ? '#B7A0FF' : '#7D5BFF'; c.casing = d ? '#6E4CFF' : '#3F23C4'; } return c; };
+  // vue 3D : carte inclinée (et relief sur la vraie carte) ; en guidage, la carte est toujours un peu inclinée
+  const TILT = 60;
+  const tilt = () => (db && db.set.v3d ? TILT : 0);
+  const navTilt = () => (db && db.set.v3d ? TILT : 50);
   const CLEAR = 'rgba(255,255,255,0)';
   const coreGrad = f => ['step', ['line-progress'], CLEAR, Math.max(0, Math.min(0.9999, f || 0)), S.nav ? 'rgba(255,255,255,.85)' : CLEAR];
   function routeColors() {
@@ -193,6 +214,39 @@
     lay({ id: 'route-case', type: 'line', source: 'route', layout: round, paint: { 'line-gradient': caseGrad(S.nav ? S.nav.s / S.nav.route.dist : 0), 'line-width': LW(3.4) } });
     lay({ id: 'route', type: 'line', source: 'route', layout: round, paint: { 'line-width': LW(0), 'line-gradient': grad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
     lay({ id: 'route-core', type: 'line', source: 'route', layout: round, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.1, 17, 3], 'line-gradient': coreGrad(S.nav ? S.nav.s / S.nav.route.dist : 0) } });
+    relief();
+  }
+  /* Vue 3D sur la vraie carte : le terrain prend du relief (collines, vallées) et un léger ombrage le rend lisible.
+     Les immeubles sont déjà en volume dans le fond de carte : ils se dressent dès que la carte est inclinée.
+     Si les tuiles d'altitude ne répondent pas, la carte reste simplement inclinée. */
+  function relief() {
+    if (!map || !map.getStyle() || S.mode !== 'live') return;
+    try {
+      if (db.set.v3d) {
+        const dem = () => ({ type: 'raster-dem', tiles: [J.live.DEM], encoding: 'terrarium', tileSize: 256, maxzoom: 14 });
+        if (!map.getSource('relief')) map.addSource('relief', dem());
+        if (!map.getSource('relief-hs')) map.addSource('relief-hs', dem()); // une source à part pour l'ombrage : le rendu est plus net
+        if (!map.getLayer('hills')) {
+          const L = map.getStyle().layers, under = L.find(l => /^(water|waterway|transportation|building)$/.test(l['source-layer'] || ''));
+          const d = isDark();
+          map.addLayer({ id: 'hills', type: 'hillshade', source: 'relief-hs', paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': d ? 'rgba(0,0,0,0.6)' : 'rgba(52,58,72,0.45)', 'hillshade-highlight-color': d ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)', 'hillshade-accent-color': 'rgba(0,0,0,0)' } }, under ? under.id : undefined);
+        }
+        if (!map.getTerrain()) map.setTerrain({ source: 'relief', exaggeration: 1.3 });
+      } else {
+        if (map.getTerrain()) map.setTerrain(null);
+        if (map.getLayer('hills')) map.removeLayer('hills');
+      }
+    } catch (e) { /* relief indisponible : la carte reste inclinée, sans relief */ }
+  }
+  function v3dUI() { const b = $('#v3d'); if (b) { b.classList.toggle('on', !!db.set.v3d); b.setAttribute('aria-pressed', String(!!db.set.v3d)); } }
+  // bascule de la vue 3D (bouton « 3D », menu du guidage ou réglages)
+  function set3d(on) {
+    db.set.v3d = !!on; save();
+    relief(); v3dUI(); attrib(); northUI();
+    const target = S.nav ? navTilt() : tilt();
+    if (S.nav) S.nav.pitch = null; // la caméra du guidage repart de l'inclinaison actuelle et glisse vers la nouvelle
+    map.easeTo({ pitch: target, duration: 700, essential: true });
+    toast(on ? (S.mode === 'live' ? 'Vue 3D : relief et immeubles en volume' : 'Vue 3D') : 'Vue à plat');
   }
   async function setBase() {
     if (!map) return;
@@ -209,7 +263,7 @@
   let attrT = 0;
   function attrib() {
     const el = $('#attrib');
-    const txt = S.mode === 'demo' ? 'Carte de démonstration' : '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '') + (trafficOn() ? ' · Trafic © TomTom' : '');
+    const txt = S.mode === 'demo' ? 'Carte de démonstration' : '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>' + (S.base === 'sat' ? ' · Photos © IGN' : '') + (trafficOn() ? ' · Trafic © TomTom' : '') + (db && db.set.v3d ? ' · Relief : <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Terrain Tiles</a>' : '');
     el.innerHTML = '<button type="button" class="ai" data-act="attr" aria-label="Sources de la carte" aria-expanded="' + el.classList.contains('open') + '">i</button><span class="at">' + txt + '</span>';
   }
   // la croix de visée : au centre de la partie visible de la carte (au-dessus du panneau du bas)
@@ -295,7 +349,7 @@
       if (n) {
         const v = AN.v, zt = n.zLock || (v > 27 ? 14.9 : v > 16 ? 15.7 : v > 7 ? 16.4 : 17), k = AN.force ? 1 : 0;
         n.z = n.z == null ? (AN.force ? zt : map.getZoom()) : n.z + (zt - n.z) * Math.min(1, dt * 0.9);
-        n.pitch = n.pitch == null ? map.getPitch() : n.pitch + (50 - n.pitch) * Math.min(1, dt * 2.5);
+        n.pitch = n.pitch == null ? map.getPitch() : n.pitch + (navTilt() - n.pitch) * Math.min(1, dt * 2.5);
         const cb = brg != null ? brg : map.getBearing();
         n.cam = n.cam == null ? map.getBearing() : G.smoothAngle(n.cam, cb, Math.min(1, dt * (1.8 + k)));
         const H = mapEl.clientHeight || 600, top = Math.min(H * 0.4, 300), bottom = WIDE.matches ? 40 : Math.min(sheet.offsetHeight + 20, H * 0.42);
@@ -327,7 +381,9 @@
   }
   function northUI() {
     const b = map.getBearing(), btn = $('#north');
-    btn.hidden = (Math.abs(b) < 1 && map.getPitch() < 1) || (!!S.nav && S.follow);
+    const p = map.getPitch(), was = btn.hidden;
+    btn.hidden = (Math.abs(b) < 1 && (p < 1 || (!!db && db.set.v3d && Math.abs(p - TILT) < 2))) || (!!S.nav && S.follow);
+    if (was !== btn.hidden) fitSide();
     if (btn.firstElementChild) btn.firstElementChild.style.transform = 'rotate(' + (-b).toFixed(1) + 'deg)';
   }
   function zoomClasses() { const z = map.getZoom(); mapEl.classList.toggle('zmid', z < 14.4); mapEl.classList.toggle('zlo', z < 12.4); }
@@ -681,7 +737,7 @@
     setDest(p.ll); markSel();
     unfollow();
     go('place');
-    if (fly) map.easeTo({ center: p.ll, zoom: Math.max(map.getZoom(), 15.2), bearing: 0, pitch: 0, offset: off(), duration: 800, essential: true });
+    if (fly) map.easeTo({ center: p.ll, zoom: Math.max(map.getZoom(), 15.2), bearing: 0, pitch: tilt(), offset: off(), duration: 800, essential: true });
   }
   function onMapClick(e) {
     const t = e.originalEvent && e.originalEvent.target;
@@ -906,7 +962,7 @@
     setAlert(null);
     $('#navsign').hidden = true; $('#ns-then').hidden = true; $('#lanes').hidden = true; $('#speed').hidden = true;
     drawPuck();
-    map.easeTo({ pitch: 0, bearing: 0, duration: 600, essential: true });
+    map.easeTo({ pitch: tilt(), bearing: 0, duration: 600, essential: true });
   }
   /* Mauvaise route : on recalcule tout de suite depuis l'endroit où l'on est, dans le sens où l'on roule.
      Parmi les trajets possibles, on prend le plus rapide avec le trafic du moment. */
@@ -1015,12 +1071,27 @@
     go('arrived');
     const me = S.pos && S.pos.ll, far = me ? G.hav(me, n.dest.ll) : 0;
     if (me && far > 25 && far < 3000) { try { map.fitBounds(G.bounds([me, n.dest.ll]), { padding: pad(), maxZoom: 17, pitch: 0, bearing: 0, duration: 900, essential: true }); } catch (e) { /* écran trop petit */ } }
-    else map.easeTo({ center: n.dest.ll, zoom: Math.max(16, Math.min(17, map.getZoom())), pitch: 0, bearing: 0, offset: off(), duration: 900, essential: true });
+    else map.easeTo({ center: n.dest.ll, zoom: Math.max(16, Math.min(17, map.getZoom())), pitch: tilt(), bearing: 0, offset: off(), duration: 900, essential: true });
   }
   function vNav() {
     const on = db.set.voice;
-    return '<div class="navbar"><div class="nb-main"><b id="nb-eta">–:––</b><span>arrivée</span></div><div><b id="nb-rem">–</b><span id="nb-dist">–</span></div><div class="nb-btns"><button type="button" class="iconbtn" data-act="mic" aria-label="Commande vocale"' + (SR ? '' : ' hidden') + '>' + ic('mic') + '</button><button type="button" class="iconbtn" data-act="voice" aria-pressed="' + on + '" aria-label="Voix du guidage">' + ic(on ? 'vol' : 'volx') + '</button><button type="button" class="btn danger" data-act="stop">Arrêter</button></div></div>' +
+    return '<div class="navbar"><div class="nb-main"><b id="nb-eta">–:––</b><span>arrivée</span></div><div><b id="nb-rem">–</b><span id="nb-dist">–</span></div><div class="nb-btns"><button type="button" class="iconbtn" data-act="voice" aria-pressed="' + on + '" aria-label="Voix du guidage">' + ic(on ? 'vol' : 'volx') + '</button><button type="button" class="iconbtn nb-opt" data-act="navmenu" aria-label="Options et réglages">' + ic('gear') + '</button><button type="button" class="btn danger" data-act="stop">Arrêter</button></div></div>' +
       (S.sim ? '<div class="simbar"><span>Trajet simulé</span><button type="button" class="chip sm" data-act="sim-pause" aria-pressed="' + S.sim.paused + '">' + ic(S.sim.paused ? 'play' : 'pause') + (S.sim.paused ? 'Reprendre' : 'Pause') + '</button><button type="button" class="chip sm" data-act="sim-speed">Vitesse ×' + S.sim.mult + '</button></div>' : '');
+  }
+  // pendant le guidage : tout ce qui est caché (réglages, thème, photos, trafic, 3D…) reste accessible ici
+  function vNavMenu() {
+    const t = (act, icon, label, on) => '<button type="button" class="rep navt" data-act="' + act + '"' + (on == null ? '' : ' aria-pressed="' + !!on + '"') + '>' + icon + '<span>' + label + '</span></button>';
+    return head('Options', 'Le guidage continue pendant ce temps.') + '<div class="repgrid navgrid' + (SR ? ' n9' : '') + '">' +
+      t('report', J.signs.danger, 'Signaler') +
+      t('v3d', ic('cube'), 'Vue 3D', db.set.v3d) +
+      t('overview', ic('route'), 'Voir tout le trajet') +
+      t('voice', ic(db.set.voice ? 'vol' : 'volx'), 'Voix', db.set.voice) +
+      (SR ? t('mic', ic('mic'), 'Commande vocale') : '') +
+      t('theme', ic('palette'), 'Carte sombre', isDark()) +
+      t('layers', ic('layers'), 'Photos aériennes', S.base === 'sat') +
+      t('traffic', ic('car'), 'Trafic', trafficOn()) +
+      t('settings', ic('gear'), 'Tous les réglages') +
+      '</div>';
   }
   function vArrived() {
     const a = S.arrived;
@@ -1150,6 +1221,7 @@
     db.favs.forEach((p, i) => { places += pl(p.name, { name: p.sub }, 'fav' + i); });
     if (db.parked) places += pl('Ma voiture', { name: 'Garée ' + F.ago(db.parked.t) }, 'parked');
     return head('Réglages', '') + '<div class="set">' + tog('voice', 'Voix du guidage') + tog('beep', 'Bip si je dépasse la limitation') + tog('tolls', 'Éviter les péages') + tog('hw', 'Éviter les autoroutes') + tog('zones', 'Annoncer les zones de danger') + tog('share', 'Partager mes signalements et voir ceux des autres') +
+      '<h3>Carte</h3>' + tog('v3d', 'Vue 3D (carte inclinée, relief, immeubles)') +
       '<h3>Trafic en direct</h3>' + tog('traffic', 'Afficher le trafic sur la carte') +
       '<p class="note">' + (S.mode !== 'live' ? 'Le trafic s’affiche sur la vraie carte, pas dans la démo.' : 'Vert : fluide. Orange : ralenti. Rouge : bouchon. Données TomTom.') + '</p>' +
       '<h3>Coût du trajet</h3>' +
@@ -1157,7 +1229,7 @@
       '<label class="field" for="set-prix">Prix du carburant<span><input id="set-prix" type="number" inputmode="decimal" step="0.01" min="0.3" max="5" value="' + s.prix + '" data-set="prix">€/L</span></label>' +
       '<label class="field" for="set-fuel">Mon carburant<select id="set-fuel" data-set="fuel">' + Object.keys(FUELS).map(k => '<option value="' + k + '"' + (s.fuel === k ? ' selected' : '') + '>' + FUELS[k] + '</option>').join('') + '</select></label>' +
       '<h3>Mes lieux</h3>' + (places ? '<div class="list">' + places + '</div>' : '<p class="note">Aucun lieu enregistré. Ouvre un lieu puis touche « Enregistrer ».</p>') +
-      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Trafic : TomTom. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version __VERSION__.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
+      '<h3>À propos</h3><p class="note">' + (S.mode === 'live' ? 'Carte et lieux : © les contributeurs d’OpenStreetMap, fond OpenFreeMap. Adresses : Base Adresse Nationale. Trafic : TomTom. Commerces : annuaire des entreprises (Sirene). Photos aériennes : IGN. Relief de la vue 3D : Terrain Tiles (Mapzen, AWS). Prix des carburants : données ouvertes du ministère de l’Économie. Météo : Open-Meteo. Pour installer Lunavia sur ton téléphone, ouvre le menu du navigateur puis « Ajouter à l’écran d’accueil ». Version __VERSION__.' : 'Tu utilises la carte de démonstration. ' + (HOME ? 'La vraie carte, avec le monde entier, ta position et la recherche d’adresses, est en ligne à l’adresse <span class="sel addr">' + esc(HOME_TXT) + '</span>.' : 'Une fois Lunavia mis en ligne, la carte du monde, ta position et la recherche d’adresses s’activent toutes seules.')) + '</p>' +
       (S.mode === 'live' ? '<div class="actions">' + (S.wipe ? '<button type="button" class="btn danger" data-act="wipe-yes">Oui, tout effacer</button><button type="button" class="btn" data-act="wipe-no">Annuler</button>' : '<button type="button" class="btn danger" data-act="wipe">' + ic('trash') + 'Effacer mes données</button>') + '</div>' : '') + '</div>';
   }
   function vAbout() {
@@ -1184,20 +1256,26 @@
     $('#demoflag').hidden = S.mode !== 'demo' || v === 'about';
     if (v === 'search') renderResults();
     else {
-      sheetIn.innerHTML = v === 'place' ? vPlace() : v === 'route' ? vRoute() : v === 'nav' ? vNav() : v === 'pois' ? vPois() : v === 'report' ? vReport() : v === 'dir' ? vDir() : v === 'rep' ? vRep() : v === 'settings' ? vSettings() : v === 'about' ? vAbout() : v === 'arrived' ? vArrived() : vHome();
+      sheetIn.innerHTML = v === 'place' ? vPlace() : v === 'route' ? vRoute() : v === 'nav' ? vNav() : v === 'navmenu' ? vNavMenu() : v === 'pois' ? vPois() : v === 'report' ? vReport() : v === 'dir' ? vDir() : v === 'rep' ? vRep() : v === 'settings' ? vSettings() : v === 'about' ? vAbout() : v === 'arrived' ? vArrived() : vHome();
       sheetIn.scrollTop = 0;
     }
     syncInsets();
     if (map) northUI();
     if (S.nav && v === 'nav') { S.nav.ui = -2; if (S.nav.next) navUI(); }
   }
-  function go(v) { if (v !== 'search' && S.view !== v) S.shareText = ''; S.view = v; app.dataset.view = v; render(); markSel(); }
+  function go(v) {
+    if (v !== 'search' && S.view !== v) S.shareText = '';
+    S.view = v; app.dataset.view = v; render(); markSel();
+    // vue 3D : après une vue d'ensemble à plat (trajet, lieux utiles), la carte se réincline en revenant à l'accueil
+    if (map && db && db.set.v3d && !S.nav && (v === 'home' || v === 'place') && map.getPitch() < TILT - 5 && !map.isMoving()) map.easeTo({ pitch: TILT, duration: 600, essential: true });
+  }
   function close() {
     switch (S.view) {
       case 'place': S.place = null; setDest(null); go(S.poi ? 'pois' : 'home'); break;
       case 'route': S.routeSeq++; S.loading = false; clearRoute(); if (S.place) { setDest(S.place.ll); go('place'); } else { setDest(null); go('home'); } break;
       case 'pois': closePois(); break;
       case 'arrived': S.arrived = null; S.place = null; setDest(null); go('home'); break;
+      case 'navmenu': go(S.nav ? 'nav' : 'home'); break;
       case 'dir': S.dir = null; clearDraft(); S.aiming = false; placeAim(); go('report'); return;
       case 'report': case 'rep': case 'settings': case 'about': S.wipe = false; S.aiming = false; placeAim(); go(S.nav ? 'nav' : S.back === 'place' && !S.place ? 'home' : S.back === 'pois' && !S.poi ? 'home' : S.back || 'home'); break;
       default: go('home');
@@ -1248,9 +1326,26 @@
     start() { startNav(false); },
     sim() { startNav(true); },
     // bouton palette : carte claire ou noir doux ; le choix est gardé pour les prochaines ouvertures
-    theme() { const next = isDark() ? 'light' : 'dark'; db.set.theme = next; save(); document.documentElement.setAttribute('data-theme', next); themeUI(); toast(next === 'dark' ? 'Carte en noir doux' : 'Carte claire'); },
+    theme() { const next = isDark() ? 'light' : 'dark'; db.set.theme = next; save(); document.documentElement.setAttribute('data-theme', next); themeUI(); toast(next === 'dark' ? 'Carte en noir doux' : 'Carte claire'); if (S.view === 'navmenu') render(); },
     attr() { if ($('#attrib').classList.contains('open')) attrHide(); else attrShow(8000); },
-    mic() { listen(); },
+    mic() { if (S.view === 'navmenu') go('nav'); listen(); },
+    navmenu() { if (S.nav) go('navmenu'); },
+    v3d() { set3d(!db.set.v3d); if (S.view === 'navmenu') render(); },
+    traffic() {
+      if (S.mode !== 'live') { toast('Le trafic s’affiche sur la vraie carte, pas dans la démo.'); return; }
+      db.set.traffic = !db.set.traffic; save(); setBase(); attrib();
+      toast(db.set.traffic ? 'Trafic affiché' : 'Trafic masqué');
+      if (S.view === 'navmenu') render();
+    },
+    // vue d'ensemble du reste du trajet ; le bouton de position reprend le guidage
+    overview() {
+      const n = S.nav; if (!n) return;
+      unfollow(); go('nav');
+      const r = n.route, i = G.at(r.geom, r.cum, n.s).i, me = S.pos ? (S.pos.show || S.pos.ll) : r.geom[i];
+      const rest = [me].concat(r.geom.slice(i + 1));
+      requestAnimationFrame(() => { try { map.fitBounds(G.bounds(rest), { padding: pad(), maxZoom: 16, bearing: 0, pitch: 0, duration: 900, essential: true }); } catch (e) { /* écran trop petit */ } });
+      toast('Pour reprendre le guidage, touche le bouton de position (la cible, à droite).', 5000);
+    },
     stop() { if (!S.nav) return; endNav(); if (S.routes.length && S.dest) { go('route'); drawRoutes(true); } else { clearRoute(); setDest(null); go('home'); } },
     voice() { db.set.voice = !db.set.voice; save(); if (!db.set.voice) { try { speechSynthesis.cancel(); } catch (e) { /* rien */ } } else say('Voix activée'); render(); },
     'sim-pause'() { if (S.sim) { S.sim.paused = !S.sim.paused; render(); } },
@@ -1290,14 +1385,15 @@
       $('#layers').classList.toggle('on', S.base === 'sat');
       attrib();
       toast(S.base === 'sat' ? 'Photos aériennes (France)' : 'Plan');
+      if (S.view === 'navmenu') render();
     },
-    north() { unfollow(); map.easeTo({ bearing: 0, pitch: 0, duration: 500, essential: true }); },
+    north() { unfollow(); map.easeTo({ bearing: 0, pitch: tilt(), duration: 500, essential: true }); },
     locate() {
       if (S.mode === 'live' && S.watch == null && !S.sim) startGPS(true);
       if (!S.pos) { if (S.mode === 'live' && !S.denied) toast('Je cherche ta position…'); return; }
       S.follow = true; $('#locate').classList.add('on');
       if (S.nav) { S.nav.zLock = null; navCam(S.pos, true); }
-      else map.easeTo({ center: S.pos.ll, zoom: Math.max(map.getZoom(), 15), bearing: 0, pitch: 0, offset: off(), duration: 700, essential: true });
+      else map.easeTo({ center: S.pos.ll, zoom: Math.max(map.getZoom(), 15), bearing: 0, pitch: tilt(), offset: off(), duration: 700, essential: true });
       northUI();
     },
     'del-place'(el) {
@@ -1332,6 +1428,7 @@
       else db.set[k] = t.value;
       save();
       if (k === 'share') { if (db.set.share) syncShared(true); else { db.reports = db.reports.filter(r => !r.sh); save(); drawReports(); } }
+      if (k === 'v3d') set3d(db.set.v3d);
       if (k === 'traffic') { setBase(); attrib(); toast(db.set.traffic ? 'Trafic affiché' : 'Trafic masqué'); }
     });
     $('#searchbar').addEventListener('submit', e => e.preventDefault());
@@ -1453,7 +1550,7 @@
     $('#chips').innerHTML = CATS.map(c => '<button type="button" class="chip" data-act="cat" data-k="' + c.id + '" aria-pressed="false">' + ic(c.icon) + c.label + '</button>').join('');
     db = load();
     if (db.set.theme === 'dark' || db.set.theme === 'light') document.documentElement.setAttribute('data-theme', db.set.theme);
-    bind();
+    bind(); v3dUI();
     if (!window.maplibregl) { fail('La carte n’a pas pu se charger. Vérifie ta connexion, puis réessaie.'); return; }
     let st = null;
     const forced = /demo/i.test(location.hash);
@@ -1482,8 +1579,9 @@
       db.reports = activeReports();
       c0 = db.last || [2.45, 46.6]; z0 = db.last ? 13.5 : 5.2;
     }
+    v3dUI();
     try {
-      map = new maplibregl.Map({ container: 'map', style: st, center: c0, zoom: z0, attributionControl: false, maxPitch: 62, fadeDuration: 120 });
+      map = new maplibregl.Map({ container: 'map', style: st, center: c0, zoom: z0, pitch: tilt(), attributionControl: false, maxPitch: 62, fadeDuration: 120 });
     } catch (e) { fail('Cet appareil ne peut pas afficher la carte.'); return; }
     let started = false;
     const first = () => { if (started) return; started = true; ready(); };

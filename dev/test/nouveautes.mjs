@@ -43,11 +43,11 @@ const zu = await page.evaluate(() => ({ vu: !document.querySelector('#zone').hid
 check('dans la zone : bandeau et annonce vocale', zu.vu && /Zone de danger/i.test(zu.txt) && /zone de danger/i.test(zu.dit), zu.txt.trim().replace(/\s+/g, ' '));
 await snap('Zone de danger');
 // commande vocale pendant le guidage
-await page.click('.navbar [data-act="mic"]'); await sleep(200); await page.evaluate(() => window.__dire('signale un bouchon'));
+await page.click('.navbar [data-act="navmenu"]'); await sleep(300); await page.click('.navt[data-act="mic"]'); await sleep(200); await page.evaluate(() => window.__dire('signale un bouchon'));
 await sleep(500);
 check('« signale un bouchon » : le signalement est posé', await page.evaluate(() => J.app.db.reports.slice(-1)[0].type === 'jam'));
 check('écran allumé demandé pendant le guidage', await page.evaluate(() => !!document.querySelector('video[aria-hidden]') || 'wakeLock' in navigator));
-await page.click('.navbar [data-act="mic"]'); await sleep(200); await page.evaluate(() => window.__dire('arrête le guidage')); await sleep(600);
+await page.click('.navbar [data-act="navmenu"]'); await sleep(300); await page.click('.navt[data-act="mic"]'); await sleep(200); await page.evaluate(() => window.__dire('arrête le guidage')); await sleep(600);
 check('« arrête le guidage » : le guidage s’arrête', await page.evaluate(() => !J.app.S.nav));
 check('le repère de destination est violet', await page.evaluate(() => { const p = document.querySelector('.jpin'); return !!p && p.innerHTML.includes('#7D5BFF') && !p.innerHTML.includes('#C1121C'); }));
 await snap('Repère de destination');

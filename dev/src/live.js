@@ -5,6 +5,8 @@
 J.live = (function () {
   const G = J.geo;
   const STYLES = 'https://tiles.openfreemap.org/styles/';
+  // altitudes du terrain pour la vue 3D (« Terrain Tiles », jeu de données ouvert hébergé par AWS, encodage terrarium)
+  const DEM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
   const ORTHO = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
   const VALHALLA = 'https://valhalla1.openstreetmap.de';
   const cache = {};
@@ -672,5 +674,5 @@ J.live = (function () {
     finally { busy = false; }
   }
 
-  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, roadAt, speedLimit, ORTHO, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
+  return { style, search, reverse, route, limits, weather, pois, cameras, shared, trafficTime, roadAt, speedLimit, ORTHO, DEM, _t: { frDefault, guessWay, inFrance, firms, generic, photonPlace, banPlace, vTrip, oRoute, poiPlace, parseMax, frLabels, lanes } };
 })();

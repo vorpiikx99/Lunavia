@@ -12,7 +12,7 @@ const vtpbf = require('vt-pbf');
 const BED = path.dirname(new URL(import.meta.url).pathname), DATA = path.join(BED, 'data');
 const REF = '/home/claude/jalon/ref';
 const PORT = 8003, VALHALLA = 'http://127.0.0.1:8002';
-const flags = { valhallaDown: false, osrmDown: false, overpassDown: false, photonDown: false, fuelDown: false, slow: 0 };
+const flags = { demDown: false, valhallaDown: false, osrmDown: false, overpassDown: false, photonDown: false, fuelDown: false, slow: 0 };
 
 /* ---------- carte : couches découpées à la demande ---------- */
 const LAYERS = ['landcover', 'landuse', 'park', 'water', 'waterway', 'transportation', 'building', 'transportation_name', 'place', 'poi'];
@@ -118,16 +118,27 @@ function fuel(q) {
   return { total_count: all.length, results: all.slice(offset, offset + lim) };
 }
 // image unie pour les photos aériennes
-function png(w, h, rgb) {
+function png(w, h, rgb, px) {
   const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
   const crc = b => { let c = 0xFFFFFFFF; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
   const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
   const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2;
   const raw = Buffer.alloc((w * 3 + 1) * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (w * 3 + 1) + 1 + x * 3, k = ((x >> 4) + (y >> 4)) % 2 ? 0 : 10; raw[o] = rgb[0] + k; raw[o + 1] = rgb[1] + k; raw[o + 2] = rgb[2] + k; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (w * 3 + 1) + 1 + x * 3; if (px) { const c = px(x, y); raw[o] = c[0]; raw[o + 1] = c[1]; raw[o + 2] = c[2]; continue; } const k = ((x >> 4) + (y >> 4)) % 2 ? 0 : 10; raw[o] = rgb[0] + k; raw[o + 1] = rgb[1] + k; raw[o + 2] = rgb[2] + k; }
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 const ORTHO = png(256, 256, [58, 84, 52]);
+// relief (tuiles « terrarium ») : des collines inventées, continues d'une tuile à l'autre
+const DEMC = new Map();
+function dem(z, x, y) {
+  const k = z + '/' + x + '/' + y; if (DEMC.has(k)) return DEMC.get(k);
+  const n = 2 ** z, b = png(256, 256, null, (i, j) => {
+    const lon = (x + (i + 0.5) / 256) / n * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + (j + 0.5) / 256) / n))) * 180 / Math.PI;
+    const e = 120 + 90 * Math.sin(lon * 90) * Math.cos(lat * 140) + 40 * Math.sin(lon * 310 + lat * 170), v = e + 32768;
+    return [Math.floor(v / 256), Math.floor(v) % 256, Math.floor((v % 1) * 256)];
+  });
+  DEMC.set(k, b); return b;
+}
 
 /* ---------- serveur ---------- */
 const SBROWS = [], TTN = [];
@@ -148,6 +159,11 @@ http.createServer(async (req, res) => {
       if (seg[0] === 'fonts') { const f = path.join(BED, 'fonts', decodeURIComponent(seg[1]).split(',')[0], seg[2]); if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'content-type': 'application/x-protobuf' }); return res.end(fs.readFileSync(f)); }
       if (seg[0] === 'sprites') { const f = path.join(BED, 'ofm-styles/sprites/sprites', seg[1], seg[2]); if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'content-type': f.endsWith('.json') ? 'application/json' : 'image/png' }); return res.end(fs.readFileSync(f)); }
       res.writeHead(404); return res.end();
+    }
+    if (host === 's3.amazonaws.com') {
+      const m = p.match(/^\/elevation-tiles-prod\/terrarium\/(\d+)\/(\d+)\/(\d+)\.png$/);
+      if (!m || flags.demDown) { res.writeHead(m ? 503 : 404); return res.end(); }
+      res.writeHead(200, { 'content-type': 'image/png', 'access-control-allow-origin': '*' }); return res.end(dem(+m[1], +m[2], +m[3]));
     }
     if (host === 'photon.komoot.io' && flags.photonSlow && !p.startsWith('/reverse')) await new Promise(r => setTimeout(r, flags.photonSlow));
     if (host === 'photon.komoot.io' && !p.startsWith('/reverse') && /tabac/i.test(q.get('q') || '')) return json(res, { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [4.8952, 52.3702] }, properties: { osm_type: 'N', osm_id: 77, osm_key: 'shop', osm_value: 'tobacco', name: 'Tabac de la Gare', city: 'Amsterdam', postcode: '1012', country: 'Nederland' } }] });
